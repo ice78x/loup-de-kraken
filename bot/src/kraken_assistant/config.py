@@ -41,9 +41,9 @@ class Settings(BaseSettings):
     max_open_risk_pct: float = 2.0
     max_daily_loss_pct: float = 3.0
     max_leverage: int = 10
-    default_spot_taker_fee_pct: float = 0.40
+    default_spot_taker_fee_pct: float = 0.80  # spot crypto, niveau d'entrée (grille du 09/07/2026)
     default_futures_taker_fee_pct: float = 0.05
-    default_spot_maker_fee_pct: float = 0.25
+    default_spot_maker_fee_pct: float = 0.40
     default_futures_maker_fee_pct: float = 0.02
     tp_split: tuple[float, float, float] = (0.30, 0.40, 0.30)
     correlation_block: float = 0.75

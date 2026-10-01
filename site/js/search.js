@@ -5,7 +5,7 @@ const ALIAS = { BTC: "XBT", XBT: "BTC" }; // Kraken appelle parfois le bitcoin �
 /** Retourne au plus `limit` instruments correspondant à `query`, triés du plus pertinent au moins pertinent. */
 export function searchInstruments(insts, query, limit = 12) {
   const f = norm(query);
-  if (!f) return [];
+  if (!f) return popular(insts, limit);
   const variants = [f];
   for (const [a, b] of Object.entries(ALIAS)) if (f.startsWith(a)) variants.push(b + f.slice(a.length));
   const scored = [];
@@ -23,4 +23,17 @@ export function searchInstruments(insts, query, limit = 12) {
   }
   scored.sort((x, y) => x[0] - y[0] || x[1] - y[1] || x[2] - y[2] || x[3].localeCompare(y[3]));
   return scored.slice(0, limit).map((x) => x[4]);
+}
+
+// Liste de départ (champ vide) : les actifs les plus suivis d'abord, en spot USD/EUR.
+const POPULAIRES = ["BTC", "ETH", "SOL", "XRP", "LINK", "ADA", "DOGE", "AVAX", "DOT", "LTC", "PAXG", "TSLAX", "NVDAX", "AAPLX", "SPYX"];
+function popular(insts, limit) {
+  const rank = (i) => {
+    const p = POPULAIRES.indexOf(norm(i.base));
+    return p < 0 ? POPULAIRES.length : p;
+  };
+  return [...(insts || [])]
+    .filter((i) => i.venue !== "futures" && ["USD", "EUR"].includes(String(i.quote).toUpperCase()))
+    .sort((a, b) => rank(a) - rank(b) || String(a.quote).localeCompare(String(b.quote)) * -1 || String(a.display).localeCompare(String(b.display)))
+    .slice(0, limit);
 }

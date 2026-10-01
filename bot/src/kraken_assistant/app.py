@@ -11,6 +11,7 @@ from .api.kraken_futures import KrakenFuturesClient
 from .api.kraken_spot import KrakenSpotClient
 from .config import Settings, get_settings
 from .database.db import Database
+from .risk.fees import default_fees
 from .execution.live import LiveBroker
 from .execution.paper import PaperBroker
 from .logging_setup import setup_logging
@@ -108,6 +109,9 @@ class App:
             except (AuthMissing, DataUnavailable, KeyError, ValueError, StopIteration):
                 pass
         s = self.settings
-        if inst.venue == "spot":
+        if inst.venue != "spot":
+            return s.default_futures_taker_fee_pct, s.default_futures_maker_fee_pct, "défaut (estimation)"
+        t, m, label = default_fees(inst.venue, inst.asset_class, inst.base, inst.quote)
+        if label.startswith("spot"):  # spot crypto : valeurs réglables (.env)
             return s.default_spot_taker_fee_pct, s.default_spot_maker_fee_pct, "défaut (estimation)"
-        return s.default_futures_taker_fee_pct, s.default_futures_maker_fee_pct, "défaut (estimation)"
+        return t, m, f"défaut {label} (estimation)"  # xStocks, stablecoins : grille Kraken

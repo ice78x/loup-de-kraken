@@ -23,7 +23,9 @@ test("formats tolérés : btcusd, btc/usd, xbt, tsla", () => {
   assert.ok(searchInstruments(insts, "xbt").some((i) => i.display === "BTC/USD"));
   assert.equal(searchInstruments(insts, "tsla")[0].display, "TSLAx/USD");
 });
-test("vide ou introuvable → aucun résultat", () => {
-  assert.deepEqual(searchInstruments(insts, "  "), []);
+test("champ vide → actifs populaires en spot (bitcoin d'abord) ; introuvable → rien", () => {
+  const r = searchInstruments(insts, "  ").map((i) => i.display);
+  assert.equal(r[0], "BTC/USD");
+  assert.ok(!r.includes("PF_XBTUSD") && !r.includes("BTC/JPY"));
   assert.deepEqual(searchInstruments(insts, "zzz"), []);
 });

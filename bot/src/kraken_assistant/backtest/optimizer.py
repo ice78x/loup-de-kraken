@@ -155,8 +155,8 @@ def optimize(db: Database, settings: Settings, data: dict[str, tuple[Instrument,
         n_inst = len({c.key for c in cands}) or len([j for j in jobs if j[1].asset_class == aclass])
         # frais : moyenne des instruments de la classe
         keys = [j[1].key for j in jobs if j[1].asset_class == aclass]
-        taker = sum(fees.get(k, (0.4, 0.25))[0] for k in keys) / max(1, len(keys))
-        maker = sum(fees.get(k, (0.4, 0.25))[1] for k in keys) / max(1, len(keys))
+        taker = sum(fees.get(k, (0.8, 0.4))[0] for k in keys) / max(1, len(keys))
+        maker = sum(fees.get(k, (0.8, 0.4))[1] for k in keys) / max(1, len(keys))
         p = BTParams(fee_pct=taker, maker_fee_pct=maker, tp_split=settings.tp_split)
         arr = {k: arrays[k] for k in keys}
         for strat in STRATEGIES:

@@ -381,3 +381,17 @@ a.lien-alerte { display: block; text-decoration: none; color: var(--ecume); marg
 .choix { display: grid; gap: 6px; margin-top: 8px; }
 .choix button.marche { width: 100%; text-align: left; color: var(--ecume); font: inherit; cursor: pointer; }
 .choix button.marche:hover, .choix button.marche:focus-visible { border-color: var(--ambre); outline: none; }
+.deroulant { scroll-margin-top: 12px; }
+.deroulant .saisie { position: relative; }
+.deroulant input { width: 100%; padding-right: 36px; }
+.deroulant .fleche { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--ambre); pointer-events: none; transition: transform .15s; }
+.deroulant.ouvert .fleche { transform: translateY(-50%) rotate(180deg); }
+.deroulant .menu { margin-top: 4px; max-height: min(44vh, 340px); overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain; background: var(--houle-2); border: 1px solid var(--ambre);
+  border-radius: var(--r-champ); box-shadow: 0 12px 28px rgba(0, 0, 0, .45); padding: 4px; }
+.deroulant .menu-titre { margin: 6px 10px; font-size: 13px; color: var(--brume); }
+.deroulant .option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; padding: 10px 12px;
+  background: none; border: 0; border-radius: 8px; color: var(--ecume); font: inherit; cursor: pointer; }
+.deroulant .option + .option { border-top: 1px solid var(--ligne); border-radius: 0; }
+.deroulant .option:hover, .deroulant .option:focus-visible { background: var(--ambre-fond); outline: none; }
+.deroulant .option b { font-family: var(--titre); }

@@ -90,7 +90,7 @@ export async function render(main, ctx, id) {
     api_asset_class: s.api_asset_class, asset_class: s.asset_class, quote: s.quote, can_short: true, max_leverage: 10 };
   const insts = await backend.instruments().catch(() => []);
   const known = insts.find((i) => i.key === s.instrument_key);
-  if (known) Object.assign(inst, { can_short: known.can_short, max_leverage: known.max_leverage || 1, lot_decimals: known.lot_decimals, ordermin: known.ordermin });
-  tradeForm(main.querySelector("#form"), { me: ctx.me, trades: mine, inst, signal: s, price, eurPerQuote: epq,
-    feeTaker: s.fee_taker_pct ?? (s.venue === "futures" ? 0.05 : 0.4), feeMaker: s.fee_maker_pct ?? (s.venue === "futures" ? 0.02 : 0.25), go: ctx.go });
+  if (known) Object.assign(inst, { base: known.base, can_short: known.can_short, max_leverage: known.max_leverage || 1, lot_decimals: known.lot_decimals, ordermin: known.ordermin });
+  // Frais : grille officielle Kraken selon le marché (fees.js).
+  tradeForm(main.querySelector("#form"), { me: ctx.me, trades: mine, inst, signal: s, price, eurPerQuote: epq, go: ctx.go });
 }

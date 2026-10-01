@@ -1,0 +1,21 @@
+// Frais Kraken Pro par défaut. Miroir de bot/src/kraken_assistant/risk/fees.py.
+// Grille officielle vérifiée le 01/10/2026 (https://www.kraken.com/features/fee-schedule), niveau d'entrée :
+//  - Futures (perpétuels) : maker 0,02 % · taker 0,05 %
+//  - xStocks : taker 0,10 % (0,08 % dès le 05/10/2026), maker 0 % (en fait -0,02 % avant le 05/10 : on ne compte pas ce bonus)
+//  - Paires stablecoin / devises : 0,20 %
+//  - Spot crypto (depuis le 09/07/2026) : maker 0,40 % · taker 0,80 %
+// Tes frais réels peuvent être plus bas si ton volume sur 30 jours est élevé.
+export const XSTOCK_CHANGE = Date.UTC(2026, 9, 5);
+const STABLES = new Set(["USDT", "USDC", "DAI", "PYUSD", "USDG", "EURC", "RLUSD", "USDS", "FDUSD", "TUSD", "USDE", "EUROP", "EURQ", "EURR",
+  "USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY"]);
+
+/** { taker, maker, label } en % par côté. inst : { venue, asset_class, base, quote, display }. */
+export function krakenFees(inst, now = Date.now()) {
+  const venue = inst?.venue || "spot";
+  if (venue === "futures") return { taker: 0.05, maker: 0.02, label: "futures Kraken" };
+  if (inst?.asset_class === "xstock") return { taker: now >= XSTOCK_CHANGE ? 0.08 : 0.1, maker: 0, label: "xStocks Kraken Pro" };
+  const [b0, q0] = String(inst?.display || "").split("/");
+  const base = String(inst?.base || b0 || "").toUpperCase(), quote = String(inst?.quote || q0 || "").toUpperCase();
+  if (STABLES.has(base) && STABLES.has(quote)) return { taker: 0.2, maker: 0.2, label: "paire stablecoin / devise" };
+  return { taker: 0.8, maker: 0.4, label: "spot Kraken Pro" };
+}

@@ -1,11 +1,10 @@
 // Formulaire « prendre un trade » : partagé par la page signal et le trade manuel.
-// Deux façons de choisir la taille :
-//  - « Comme sur Kraken » : tu choisis la quantité (ou le montant) et le levier ; le site te montre ce que ça implique.
-//  - « Automatique » : tu choisis le risque en % ; le site calcule la quantité.
-// Garde-fous du club dans les deux cas : SL obligatoire, jamais plus de 2 % du solde au SL, budget de risque du jour.
+// Comme sur Kraken : tu choisis la quantité (ou le montant), le type d'ordre et le levier ; le site te montre ce que ça implique
+// (marge isolée, perte au SL ou à la liquidation, gains aux TP, frais Kraken réels de la grille officielle).
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
-import { planFromQty, planTrade, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
+import { krakenFees } from "../fees.js";
+import { planFromQty, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
 import { busy, esc, eur, num, pct, pq, px, rr, sym, toast } from "../ui.js";
 
 const r6 = (x) => (x == null || !isFinite(x) ? "" : String(+(+x).toPrecision(6)));
@@ -14,7 +13,8 @@ const MAX_RISK_PCT = 2;
 /**
  * @param host élément où afficher le formulaire
  * @param o { me, trades (du membre), inst {display, venue, api_symbol, api_asset_class, asset_class, quote, instrument_key,
- *            can_short, max_leverage, lot_decimals, ordermin}, signal?, price?, eurPerQuote, feeTaker, feeMaker, go }
+ *            can_short, max_leverage, lot_decimals, ordermin}, signal?, price?, eurPerQuote, go }
+ * Frais : grille Kraken selon le marché (fees.js), sauf si o.feeTaker / o.feeMaker sont fournis.
  */
 export function tradeForm(host, o) {
   const s = o.signal;
@@ -26,7 +26,10 @@ export function tradeForm(host, o) {
   const baseName = esc(String(o.inst.display || "").split("/")[0]);
   const q = sym(o.inst.quote).trim() || o.inst.quote || "";
   const free = o.me.guardrails === false; // garde-fous coupés par le membre (Mon compte)
-  const sizeMode0 = (() => { try { return localStorage.getItem("ldk-size-mode") || "qty"; } catch { return "qty"; } })();
+  const grille = krakenFees(o.inst);
+  const fees = { taker: o.feeTaker ?? grille.taker, maker: o.feeMaker ?? grille.maker };
+  const fp = (x) => String(+x.toFixed(3)).replace(".", ",") + " %";
+  const order0 = (() => { try { return localStorage.getItem("ldk-order-type") || "limit"; } catch { return "limit"; } })();
 
   host.innerHTML = `
   <form class="form" novalidate>
@@ -39,12 +42,13 @@ export function tradeForm(host, o) {
     <label class="champ"><span>Prix d'entrée (limite)${q ? ` en ${esc(q)}` : ""}</span><input name="entry" inputmode="decimal" value="${r6(entry0)}">
       <small>${o.price ? `Prix actuel ${pq(o.price, o.inst.quote)}` : "Prix actuel indisponible"}</small></label>
 
-    <div class="choix" role="radiogroup" aria-label="Choix de la taille">
-      <label><input type="radio" name="size" value="qty" ${sizeMode0 === "qty" ? "checked" : ""}><span>Je choisis la quantité (comme Kraken)</span></label>
-      <label><input type="radio" name="size" value="risk" ${sizeMode0 === "risk" ? "checked" : ""}><span>Automatique (risque en %)</span></label>
+    <div class="choix" role="radiogroup" aria-label="Type d'ordre">
+      <label><input type="radio" name="order" value="limit" ${order0 === "limit" ? "checked" : ""}><span>Limite · frais ${fp(fees.maker)}</span></label>
+      <label><input type="radio" name="order" value="market" ${order0 === "market" ? "checked" : ""}><span>Marché · frais ${fp(fees.taker)}</span></label>
     </div>
+    <p class="small muted" style="margin-top:-6px">Frais ${esc(grille.label)} (grille officielle Kraken). Un ordre limite exécuté tout de suite paie les frais « marché ».</p>
 
-    <div data-size="qty">
+    <div>
       <div class="deux">
         <label class="champ"><span>Quantité (${baseName})</span><input name="qty" inputmode="decimal" placeholder="0">
           <small>${o.inst.ordermin ? `Minimum Kraken : ${o.inst.ordermin} ${baseName}` : "&nbsp;"}</small></label>
@@ -52,20 +56,11 @@ export function tradeForm(host, o) {
           <small>= quantité × prix d'entrée</small></label>
       </div>
       <div class="ligne small">
-        <span class="muted">Remplir pour risquer :</span>
-        <button type="button" class="btn discret mini" data-fill="${+o.me.risk_pct || 1}">${String(+o.me.risk_pct || 1).replace(".", ",")} % (habituel)</button>
-        <button type="button" class="btn discret mini" data-fill="${MAX_RISK_PCT}">${MAX_RISK_PCT} % (maximum)</button>
-      </div>
-      <div class="ligne small">
         <span class="muted">Ou engager en marge :</span>
         ${[10, 25, 50, 100].map((k) => `<button type="button" class="btn discret mini" data-marge="${k}">${k} %</button>`).join("")}
         <span class="muted">du solde</span>
       </div>
     </div>
-
-    <label class="champ" data-size="risk"><span>Risque sur ce trade (%)</span>
-      <input name="risk" inputmode="decimal" value="${Math.min(+o.me.risk_pct, Math.max(0.1, budget.availablePct)).toFixed(2)}">
-      <small>Disponible : ${eur(budget.available)} (${pct(budget.availablePct, 2)})</small></label>
 
     <label class="champ"><span>Levier : <b id="lev-v">x1</b></span>
       <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${dir0 === "SHORT" && (o.inst.venue || "spot") === "spot" ? Math.min(2, maxLev) : 1}">
@@ -94,10 +89,10 @@ export function tradeForm(host, o) {
   let lastEdited = "qty"; // quantité ou montant : le dernier champ tapé fait foi
 
   const v = (n) => num(f.elements[n].value);
-  const sizeMode = () => f.elements.size.value;
+  const orderType = () => f.elements.order.value;
   const base = () => ({
     direction: f.elements.dir.value, entry: v("entry"), sl: v("sl"), tps: [v("tp1"), v("tp2"), v("tp3")].filter((x) => x != null),
-    balance: +o.me.balance_eur, feeTaker: o.feeTaker, feeMaker: o.feeMaker, entryIsMaker: !!(s && !inZone),
+    balance: +o.me.balance_eur, feeTaker: fees.taker, feeMaker: fees.maker, entryIsMaker: orderType() === "limit",
     eurPerQuote: o.eurPerQuote, lotDecimals: o.inst.lot_decimals ?? 8, ordermin: o.inst.ordermin || 0, venue: o.inst.venue || "spot",
     usedMarginEur: usedMarginEur(o.trades),
   });
@@ -109,35 +104,17 @@ export function tradeForm(host, o) {
     else { const a = v("amount"); f.elements.qty.value = a > 0 ? r6(a / e) : ""; }
   }
 
-  function showMode() {
-    const m = sizeMode();
-    f.querySelectorAll("[data-size]").forEach((el) => { el.hidden = el.dataset.size !== m; });
-    try { localStorage.setItem("ldk-size-mode", m); } catch { /* sans stockage, tant pis */ }
-  }
-
   function update() {
-    showMode();
+    try { localStorage.setItem("ldk-order-type", orderType()); } catch { /* sans stockage, tant pis */ }
     const p = base();
     const lev = +f.elements.lev.value;
     f.querySelector("#lev-v").textContent = "x" + lev;
-    if (sizeMode() === "qty") {
-      syncQtyAmount();
-      plan = planFromQty({ ...p, qty: v("qty"), leverage: lev, riskPct: +o.me.risk_pct, maxRiskPct: MAX_RISK_PCT, strict: !free });
-      // Tant que tu n'as pas touché au levier, on propose le plus petit qui permet de payer la marge (comme Kraken l'exigerait).
-      if (!userTouchedLev && plan.notionalEur > p.balance * lev) {
-        const sug = suggestLeverage(plan, p.balance, plan.slPct, maxLev);
-        if (sug && sug > lev) { f.elements.lev.value = sug; return update(); }
-      }
-    } else {
-      plan = planTrade({ ...p, riskPct: v("risk"), leverage: lev, strict: !free });
-      if (!userTouchedLev && plan.notionalEur) {
-        const sug = suggestLeverage(plan, p.balance, plan.slPct, maxLev);
-        if (sug && sug !== lev) { f.elements.lev.value = sug; return update(); }
-      }
-      if (plan.ok && plan.effectiveRiskPct > MAX_RISK_PCT + 1e-9) {
-        (free ? plan.warnings : plan.errors).push(free ? `Tu risques ${plan.effectiveRiskPct.toFixed(2)} % de ton solde (la règle du club conseille ${MAX_RISK_PCT} % maximum).`
-          : `Règle du club : jamais plus de ${MAX_RISK_PCT} % du solde par trade.`);
-      }
+    syncQtyAmount();
+    plan = planFromQty({ ...p, qty: v("qty"), leverage: lev, riskPct: +o.me.risk_pct, maxRiskPct: MAX_RISK_PCT, strict: !free });
+    // Tant que tu n'as pas touché au levier, on propose le plus petit qui permet de payer la marge (comme Kraken l'exigerait).
+    if (!userTouchedLev && plan.notionalEur > p.balance * lev) {
+      const sug = suggestLeverage(plan, p.balance, plan.slPct, maxLev);
+      if (sug && sug > lev) { f.elements.lev.value = sug; return update(); }
     }
     const errs = [...(plan.errors || [])];
     if (p.direction === "SHORT" && o.inst.can_short === false) errs.push("Cet instrument ne permet pas le SHORT sur Kraken (pas de marge).");
@@ -150,9 +127,7 @@ export function tradeForm(host, o) {
 
   function render(p, lev, errs) {
     const box = f.querySelector("#plan");
-    if (!p.entry || (sizeMode() === "risk" && !p.sl)) {
-      box.innerHTML = `<p class="muted">${sizeMode() === "risk" ? "Le mode automatique a besoin d'un stop pour calculer la taille." : "Renseigne le prix d'entrée."}</p>`; return;
-    }
+    if (!p.entry) { box.innerHTML = '<p class="muted">Renseigne le prix d\'entrée.</p>'; return; }
     if (!plan.qty) {
       box.innerHTML = errs.length ? `<div class="alerte rouge"><ul>${errs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : "";
       return;
@@ -170,6 +145,7 @@ export function tradeForm(host, o) {
           <div><dt>Quantité à ${p.direction === "LONG" ? "acheter" : "vendre"}</dt><dd class="num">${+plan.qty.toPrecision(6)} ${baseName}</dd></div>
           <div><dt>Valeur de la position</dt><dd class="num">${eur(plan.notionalEur)}</dd></div>
           <div><dt>Marge isolée (x${lev})</dt><dd class="num">${eur(plan.marginEur)}</dd></div>
+          <div><dt>Frais d'entrée (${fp(p.entryIsMaker ? fees.maker : fees.taker)})</dt><dd class="num">${eur(-plan.entryFeeEur)}</dd></div>
           ${plan.liqPrice ? `<div><dt>Liquidation ≈</dt><dd class="num perte">${pq(plan.liqPrice, o.inst.quote)}</dd></div>` : ""}
           ${plan.profitsEur.map((g, i) => `<div><dt>Gain au TP${i + 1} (${[30, 40, 30][i]} %)</dt><dd class="num gain">${eur(g, true)} · ${rr(plan.rr[i])}</dd></div>`).join("")}
         </dl>
@@ -178,18 +154,10 @@ export function tradeForm(host, o) {
       ${plan.warnings.map((w) => `<p class="small muted">⚠ ${esc(w)}</p>`).join("")}
       <p class="small muted">Marge isolée : ce trade n'engage que ${eur(plan.marginEur)}. Le reste de ton capital n'est jamais touché par lui
         ${plan.freeMarginEur != null ? ` (marge encore libre avant ce trade : ${eur(plan.freeMarginEur)})` : ""}.${plan.liqPrice ? " Liquidation approximative : Kraken peut liquider un peu avant selon ses niveaux de marge." : ""}</p>
-      <p class="small muted">Sur Kraken : ${p.direction === "LONG" ? "Acheter" : "Vendre"} · Limite ${pq(p.entry, o.inst.quote)} · Quantité ${+plan.qty.toPrecision(6)} ${baseName} · Levier ${lev > 1 ? "x" + lev + " · marge isolée" : "aucun (x1)"}${p.sl ? ` · Stop ${pq(p.sl, o.inst.quote)}` : " · sans stop"}.
+      <p class="small muted">Sur Kraken : ${p.direction === "LONG" ? "Acheter" : "Vendre"} · ${p.entryIsMaker ? `Limite ${pq(p.entry, o.inst.quote)}` : "Marché"} · Quantité ${+plan.qty.toPrecision(6)} ${baseName} · Levier ${lev > 1 ? "x" + lev + " · marge isolée" : "aucun (x1)"}${p.sl ? ` · Stop ${pq(p.sl, o.inst.quote)}` : " · sans stop"}.
         R:R net de frais : ${plan.rrNet.map((r, i) => `TP${i + 1} ${r.toFixed(1)}`).join(" · ")}.</p></div>`;
   }
 
-  // Bouton « remplir pour risquer X % » : calcule la quantité correspondante.
-  f.querySelectorAll("[data-fill]").forEach((b) => b.addEventListener("click", () => {
-    const qq = qtyForRisk(base(), +b.dataset.fill);
-    if (!qq) { toast("Renseigne d'abord l'entrée et le SL.", true); return; }
-    lastEdited = "qty";
-    f.elements.qty.value = r6(qq);
-    update();
-  }));
   // Bouton « engager X % du solde en marge » (comme le curseur de Kraken) : quantité = solde × X % × levier / prix.
   f.querySelectorAll("[data-marge]").forEach((b) => b.addEventListener("click", () => {
     const p = base();
@@ -207,7 +175,7 @@ export function tradeForm(host, o) {
     if (e.target.name === "amount") lastEdited = "amount";
     update();
   });
-  f.addEventListener("change", (e) => { if (e.target.name === "size" || e.target.name === "dir") update(); });
+  f.addEventListener("change", (e) => { if (e.target.name === "order" || e.target.name === "dir") update(); });
 
   f.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -224,7 +192,7 @@ export function tradeForm(host, o) {
         asset_class: o.inst.asset_class, quote: o.inst.quote || "EUR", direction: x.direction, mode,
         entry_price: x.entry, sl: x.sl ?? null, liq_price: plan.liqPrice ?? null, tp1: x.tps[0] ?? null, tp2: x.tps[1] ?? null, tp3: x.tps[2] ?? null,
         leverage: lev, qty: plan.qty, qty_remaining: plan.qty, risk_eur: +plan.lossAtSlEur.toFixed(4),
-        eur_per_quote: o.eurPerQuote, fee_pct: o.feeTaker, balance_at_entry: +o.me.balance_eur,
+        eur_per_quote: o.eurPerQuote, fee_pct: x.entryIsMaker ? fees.maker : fees.taker, balance_at_entry: +o.me.balance_eur,
         realized_pnl_eur: -(plan.entryFeeEur || 0), strategy: s?.strategy || "manuel", notes: f.elements.notes.value || null,
         events: [{ at: new Date().toISOString(), text: `Ouverture ${mode === "reel" ? "réelle" : "paper"} à ${x.entry} · ${+plan.qty.toPrecision(6)} ${o.inst.display.split("/")[0]} · x${lev}` }],
       });
@@ -234,7 +202,7 @@ export function tradeForm(host, o) {
   });
 
   // Signal : on pré-remplit la quantité qui correspond à ton risque habituel (modifiable).
-  if (s && sizeMode() === "qty") {
+  if (s) {
     const qq = qtyForRisk(base(), Math.min(+o.me.risk_pct || 1, Math.max(0.01, budget.availablePct)));
     if (qq) f.elements.qty.value = r6(qq);
   }
