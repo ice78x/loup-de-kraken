@@ -39,7 +39,16 @@ function supabaseBackend() {
     signalsOf: (scanId) => q(sb.from("signals").select("*").eq("scan_id", scanId).order("status").order("score", { ascending: false })),
     signal: (id) => q(sb.from("signals").select("*").eq("id", id).single()),
     recentSignals: (limit = 30) => q(sb.from("signals").select("id,created_at,display,direction,status,score,strategy").eq("status", "TRADE").order("created_at", { ascending: false }).limit(limit)),
-    instruments: () => q(sb.from("instruments").select("*").order("display").limit(2000)),
+    // Supabase renvoie au plus 1 000 lignes par requête : on lit la liste par pages pour avoir TOUTES les paires.
+    instruments: async () => {
+      const out = [];
+      for (let from = 0; from < 10_000; from += 1000) {
+        const page = await q(sb.from("instruments").select("*").order("key").range(from, from + 999));
+        out.push(...page);
+        if (page.length < 1000) break;
+      }
+      return out.sort((a, b) => String(a.display).localeCompare(String(b.display)));
+    },
     edges: () => q(sb.from("bot_edges").select("*").order("asset_class")),
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),

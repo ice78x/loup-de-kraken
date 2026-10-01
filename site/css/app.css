@@ -376,3 +376,8 @@ details.espace[open] > summary::before { content: "▾ "; }
 .idee.nouvelle { border-color: var(--ambre); }
 .idee .reponse { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--ambre); background: var(--ambre-fond); border-radius: 8px; font-size: .93rem; }
 a.lien-alerte { display: block; text-decoration: none; color: var(--ecume); margin-bottom: 16px; }
+
+/* Trade manuel : résultats de recherche d'actif */
+.choix { display: grid; gap: 6px; margin-top: 8px; }
+.choix button.marche { width: 100%; text-align: left; color: var(--ecume); font: inherit; cursor: pointer; }
+.choix button.marche:hover, .choix button.marche:focus-visible { border-color: var(--ambre); outline: none; }
