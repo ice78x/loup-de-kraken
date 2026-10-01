@@ -161,3 +161,33 @@ def test_cles_supabase_nouvelles_et_anciennes(key, bearer):
 def test_cle_publique_refusee_pour_le_bot():
     with pytest.raises(SupabaseError, match="SECRÈTE"):
         Supabase("https://x.supabase.co", "sb_publishable_abc")
+
+
+def test_nan_et_numpy_envoyes_en_json_strict():
+    """Données réelles : NaN/inf/numpy ne doivent jamais casser l'envoi (Supabase refuse « NaN »)."""
+    import numpy as np
+    got = {}
+
+    def h(req: httpx.Request) -> httpx.Response:
+        got["body"] = json.loads(req.content)  # json strict : lèverait sur NaN
+        return httpx.Response(201, json=[{"id": 1}])
+    sb = Supabase("https://x.supabase.co", "sb_secret_x", transport=httpx.MockTransport(h))
+    sb.insert("scans", {"a": float("nan"), "b": np.float64(1.5), "c": [np.int64(3), float("inf")], "d": {"e": np.nan}})
+    assert got["body"] == {"a": None, "b": 1.5, "c": [3, None], "d": {"e": None}}
+
+
+@pytest.mark.parametrize("status,body,mot", [
+    (401, '{"message":"Invalid API key"}', "SECRÈTE"),
+    (404, '{"code":"PGRST205","message":"Could not find the table public.scans"}', "schema.sql"),
+    (400, '{"message":"Could not find the \'x\' column of \'scans\'"}', "schema.sql"),
+])
+def test_erreur_supabase_expliquee(status, body, mot, monkeypatch, capsys):
+    def h(req):
+        return httpx.Response(status, text=body)
+    sb = Supabase("https://x.supabase.co", "sb_secret_x", transport=httpx.MockTransport(h))
+    with pytest.raises(SupabaseError) as e:
+        sb.insert("scans", {"a": 1})
+    assert mot in e.value.hint()
+    monkeypatch.setattr(cloud, "_main", lambda cmd: sb.insert("scans", {}))
+    assert cloud.main(["scan"]) == 1
+    assert "🛑 ERREUR SUPABASE" in capsys.readouterr().out

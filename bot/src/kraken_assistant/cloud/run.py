@@ -205,11 +205,21 @@ def cleanup(sb: Supabase, days: int = 60) -> None:
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
     cmd = (argv or sys.argv[1:] or ["scan"])[0]
+    try:
+        return _main(cmd)
+    except SupabaseError as e:
+        sys.stdout.flush()
+        log.error("ÉCHEC envoi vers Supabase : %s", e)
+        print(f"\n🛑 ERREUR SUPABASE\n{e}\n👉 {e.hint()}", flush=True)
+        return 1
+
+
+def _main(cmd: str) -> int:
     sb = Supabase(os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_SERVICE_KEY", ""))
     app = build(sb)
     if cmd == "scan":
         rep = scan(app, mode=os.environ.get("SCAN_MODE", "normal"))
-        print(format_report(rep))
+        print(format_report(rep), flush=True)
         sid = push_scan(sb, rep)
         log.info("scan %s envoyé au site (verdict %s)", sid, rep.verdict)
         try:
