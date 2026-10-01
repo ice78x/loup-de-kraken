@@ -200,6 +200,8 @@ export const PROCHE_PCT = 0.5;
 export function espace(s, ph) {
   if (ph && ["stop", "tp", "parti", "expire"].includes(ph.code)) return "fini";
   if (ph && (["go", "condition", "zone"].includes(ph.code) || (ph.code === "attendre" && ph.dist != null && ph.dist <= PROCHE_PCT))) return "imminent";
+  const net = scenario(s, 1);
+  if (net && net.tout != null && net.tout <= 0) return "fragile"; // les frais Kraken mangent le gain : jamais dans « plus solides »
   return +s.score >= SEUIL_SOLIDE ? "solide" : "fragile";
 }
 
@@ -227,7 +229,10 @@ export function phaseHtml(ph) {
 
 const chiffre = (label, val, cl, aide) =>
   `<div><dt>${label}</dt><dd class="num ${cl}">${val}</dd>${aide ? `<span class="small muted">${aide}</span>` : ""}</div>`;
-const p1 = (x) => (x == null || !isFinite(x) ? "—" : x.toLocaleString("fr-FR", { maximumFractionDigits: x < 10 ? 1 : 0 }) + " %");
+const p1 = (x) => (x == null || !isFinite(x) ? "—" : x.toLocaleString("fr-FR", { maximumFractionDigits: Math.abs(x) < 10 ? 1 : 0 }) + " %");
+/** Pourcentage signé (+1,2 % / −0,7 %), jamais « +- ». */
+const ps = (x) => (x == null || !isFinite(x) ? "—" : (x >= 0 ? "+" : "−") + p1(Math.abs(x)));
+const ton = (x) => (x == null ? "" : x >= 0 ? "gain" : "perte");
 
 /** Levier conseillé, bien visible (carte d'accueil et page du signal). */
 export function levierBadge(s, me, maxLev) {
@@ -245,6 +250,7 @@ export function chiffres(s, me, maxLev = 10) {
   const cap = Math.max(1, Math.min(10, +maxLev || 10));
   const minLev = !isLong(s) && (s.venue || "spot") === "spot" ? Math.min(2, cap) : 1;
   const levs = [...new Set([1, 2, 3, 5, 10, c.lev])].filter((l) => l >= minLev && l <= cap).sort((a, b) => a - b);
+  const f = krakenFees(s);
   const vue = (l) => {
     const r = scenario(s, l, maxLev);
     if (!r) return `<p class="small muted" data-lev-vue="${l}" ${l === c.lev ? "" : "hidden"}>Stop manquant : calcul impossible.</p>`;
@@ -252,9 +258,13 @@ export function chiffres(s, me, maxLev = 10) {
     return `<div data-lev-vue="${l}" ${l === c.lev ? "" : "hidden"}>
       <dl class="setup-chiffres">
         ${chiffre("Si ça rate", "−" + p1(r.perte), "perte", r.liqAvant ? "⚠ liquidé avant le stop" : "de ta mise, le stop coupe")}
-        ${chiffre("Objectif 1", r.tp1 != null ? "+" + p1(r.tp1) : "—", "gain", "de ta mise (30 % encaissés)")}
-        ${chiffre("Si tout réussit", r.tout != null ? "+" + p1(r.tout) : "—", "gain", "de ta mise, après frais")}
+        ${chiffre("Objectif 1", ps(r.tp1), ton(r.tp1), "de ta mise (30 % encaissés)")}
+        ${chiffre("Si tout réussit", ps(r.tout), ton(r.tout), "de ta mise, après frais")}
       </dl>
+      ${r.tout != null && r.tout <= 0 ? `<p class="alerte rouge small">⚠ <b>Les frais mangent tout le gain :</b> même si tous les objectifs sont atteints, ce trade perd de l'argent
+        (frais Kraken ${esc(f.label)} : ${p1(f.maker)} par ordre limite, ${p1(f.taker)} au marché, sur la valeur de la position). Les objectifs sont trop proches.
+        ${(s.venue || "spot") === "spot" ? "En futures perpétuels, les frais sont bien plus bas (0,02 % / 0,05 %)." : "À éviter."}</p>`
+        : r.tp1 != null && r.tp1 <= 0 ? `<p class="alerte small">⚠ À l'objectif 1, les frais sont plus gros que le gain : seuls les objectifs 2 et 3 rapportent.</p>` : ""}
       <p class="small muted">Ex. avec 10 € de mise à x${l} (position de ${eur(10 * l)}) : ${ex(-r.perte)} · ${ex(r.tp1)} · ${ex(r.tout)}.
         ${l > c.lev ? " Plus de levier = position plus grosse pour la même mise : la perte au stop grossit aussi." : ""}</p>
     </div>`;

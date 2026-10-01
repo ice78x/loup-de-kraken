@@ -112,3 +112,13 @@ test("ordre : validés d'abord, puis confiance décroissante", () => {
   const l = [{ status: "WATCH", score: 90 }, { status: "TRADE", score: 70 }, { status: "WATCH", score: 95 }].sort(ordre);
   assert.deepEqual(l.map((x) => x.score), [70, 95, 90]);
 });
+
+test("frais spot plus gros que le gain : résultat négatif au TP (affiché en rouge, pas « +- »)", async () => {
+  const { chiffres } = await import("../setup.js");
+  const s = { ...long, entry_low: 100, entry_high: 100, sl: 99.8, tp1: 100.3, tp2: 100.5, tp3: 100.7, venue: "spot" };
+  const r = scenario(s, 1);
+  assert.ok(r.tp1 < 0 && r.tout < 0);
+  const html = chiffres(s, { risk_pct: 1 });
+  assert.ok(!html.includes("+-") && !html.includes("+−"));
+  assert.match(html, /Les frais mangent tout le gain/);
+});
