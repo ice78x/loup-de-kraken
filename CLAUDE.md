@@ -27,7 +27,9 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
 4. Jamais « trade sûr », « gain garanti », « aucun risque », « machine à cash ».
 5. La clé Supabase secrète (`sb_secret_…`, ou l'ancienne `service_role`) ne va **que** dans les secrets GitHub. Le site n'utilise que la clé publique
    (`sb_publishable_…` / `anon`) + RLS. Les clés `sb_` ne sont pas des JWT : jamais dans `Authorization: Bearer` (voir `cloud/supabase_rest.py`).
-6. Tout nouveau réglage modifiable depuis le site : ajouter la ligne dans `bot_settings` (schema.sql, avec min/max)
+6. Réglages du bot : **admin seulement** (RLS `is_admin()` sur `bot_settings`, page `#/bot` réservée). Les membres passent par la boîte à idées
+   privée (`#/idees`, table `ideas` : un membre ne lit que ses idées, l'admin les lit toutes et répond dans Mon compte).
+7. Tout nouveau réglage modifiable depuis le site : ajouter la ligne dans `bot_settings` (schema.sql, avec min/max)
    ET dans `EDITABLE` de `bot/src/kraken_assistant/cloud/run.py` (bornes revérifiées).
 
 ## Ajouter…

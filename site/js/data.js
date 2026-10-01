@@ -63,11 +63,12 @@ function supabaseBackend() {
     deleteTrade: (id) => q(sb.from("trades").delete().eq("id", id)),
     leaderboard: () => q(sb.from("leaderboard").select("*").order("pnl_eur", { ascending: false })),
     // --- idées
-    ideas: () => q(sb.from("ideas").select("*,profiles:user_id(pseudo),idea_votes(user_id)").order("created_at", { ascending: false })),
-    addIdea: (title, body) => q(sb.from("ideas").insert({ title, body })),
+    // Boîte à idées privée : un membre ne reçoit que les siennes, l'admin les reçoit toutes (règles de sécurité de la base).
+    ideas: () => q(sb.from("ideas").select("*,profiles:user_id(pseudo)").order("created_at", { ascending: false })),
+    addIdea: (title, body, category) => q(sb.from("ideas").insert({ title, body: body || null, category })),
     setIdea: (id, patch) => q(sb.from("ideas").update(patch).eq("id", id)),
-    vote: (idea_id) => q(sb.from("idea_votes").insert({ idea_id })),
-    unvote: async (idea_id) => q(sb.from("idea_votes").delete().eq("idea_id", idea_id).eq("user_id", (await sb.auth.getUser()).data.user.id)),
+    deleteIdea: (id) => q(sb.from("ideas").delete().eq("id", id)),
+    unseenIdeas: async () => (await sb.from("ideas").select("id", { count: "exact", head: true }).eq("seen", false)).count || 0,
   };
 }
 

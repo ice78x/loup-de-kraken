@@ -65,7 +65,7 @@ class PositionPlan:
 
 def _floor_step(x: float, decimals: int) -> float:
     step = 10 ** (-decimals)
-    return math.floor(x / step + 1e-9) * step
+    return round(math.floor(x / step + 1e-9) * step, max(0, decimals))
 
 
 def validate_levels(direction: str, entry: float, sl: float, tps: list[float]) -> list[str]:

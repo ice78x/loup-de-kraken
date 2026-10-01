@@ -78,3 +78,92 @@ test("clôture partielle puis totale", () => {
   near(b.update.realized_pnl_eur, 0.6 + 0.7 * 4);
   near(b.update.r_multiple, (0.6 + 2.8) / 2, 1e-3);
 });
+
+test("détail d'un trade ouvert : frais d'entrée, mouvement, frais de sortie, résultat si on ferme", async () => {
+  const { pnlBreakdown } = await import("../sizing.js");
+  // SHORT ouvert : 0,4 % de frais, prix qui baisse un peu
+  const t = { status: "ouvert", direction: "SHORT", entry_price: 100, qty: 9, qty_remaining: 9, fee_pct: 0.4,
+    eur_per_quote: 1, realized_pnl_eur: -(0.004 * 100 * 9) };
+  const b = pnlBreakdown(t, 99.6);
+  assert.ok(Math.abs(b.entryFee - 3.6) < 1e-9);
+  assert.ok(Math.abs(b.move - 3.6) < 1e-9);          // (100 − 99,6) × 9
+  assert.ok(Math.abs(b.exitFee - 0.004 * 99.6 * 9) < 1e-9);
+  assert.ok(Math.abs(b.banked) < 1e-9);               // aucun TP encore
+  assert.ok(Math.abs(b.ifCloseNow - (-3.6 + 3.6 - 0.004 * 99.6 * 9)) < 1e-9);
+  assert.equal(pnlBreakdown(t, null).ifCloseNow, null); // pas de prix = pas de chiffre inventé
+});
+
+test("mode Kraken : quantité + levier → perte au SL, marge, liquidation, règle des 2 %", async () => {
+  const { planFromQty, qtyForRisk } = await import("../sizing.js");
+  const base = { direction: "LONG", entry: 100, sl: 98, tps: [104, 106, 110], balance: 90, riskPct: 1, maxRiskPct: 2,
+    feeTaker: 0, feeMaker: 0, eurPerQuote: 1, lotDecimals: 4, venue: "spot" };
+  const p = planFromQty({ ...base, qty: 0.45, leverage: 1 });
+  assert.equal(p.ok, true);
+  assert.ok(Math.abs(p.lossAtSlEur - 0.9) < 1e-9);            // 0,45 × 2 $
+  assert.ok(Math.abs(p.marginEur - 45) < 1e-9);
+  assert.equal(p.liqPrice, null);                             // x1 : pas de liquidation
+  // Le levier ne change PAS la perte au SL, seulement la marge
+  const p5 = planFromQty({ ...base, qty: 0.45, leverage: 5 });
+  assert.ok(Math.abs(p5.lossAtSlEur - p.lossAtSlEur) < 1e-12);
+  assert.ok(Math.abs(p5.marginEur - 9) < 1e-9);
+  assert.ok(p5.liqPrice > 80 && p5.liqPrice < 100);           // x5 : liquidation ≈ 84 (sous l'entrée)
+  // Trop gros : > 2 % du solde → bloqué
+  const big = planFromQty({ ...base, qty: 1, leverage: 2 });
+  assert.equal(big.ok, false);
+  assert.ok(big.errors.some((e) => /2 %/.test(e)));
+  // Entre 1 % et 2 % → avertissement, pas blocage
+  const mid = planFromQty({ ...base, qty: 0.7, leverage: 1 });
+  assert.equal(mid.ok, true);
+  assert.ok(mid.warnings.some((w) => /habituel/.test(w)));
+  // Liquidation avant le SL → bloqué (x10 : liquidation ≈ 8 % ; SL à 10 %)
+  const liq = planFromQty({ ...base, sl: 90, qty: 0.05, leverage: 10 });
+  assert.ok(liq.errors.some((e) => /liquidation/.test(e)));
+  // SHORT spot sans levier → Kraken exige x2
+  const sh = planFromQty({ ...base, direction: "SHORT", sl: 102, tps: [96], qty: 0.4, leverage: 1 });
+  assert.ok(sh.errors.some((e) => /x2/.test(e)));
+  // Sans SL (marge isolée) : perte max = toute la position à x1 → au-delà de 2 %, bloqué par les garde-fous
+  assert.ok(planFromQty({ ...base, sl: null, qty: 0.4, leverage: 1 }).errors.some((e) => /ajoute un stop/.test(e)));
+  // Bouton « risquer 1 % » : 0,90 € / 2 $ = 0,45
+  assert.equal(qtyForRisk(base, 1), 0.45);
+});
+
+test("garde-fous coupés : plus rien de bloquant côté club, seulement des avertissements ; Kraken reste respecté", async () => {
+  const { planFromQty, planTrade } = await import("../sizing.js");
+  const base = { direction: "LONG", entry: 100, sl: 90, tps: [120], balance: 90, riskPct: 1, maxRiskPct: 2,
+    feeTaker: 0, feeMaker: 0, eurPerQuote: 1, lotDecimals: 4, venue: "spot", strict: false };
+  const gros = planFromQty({ ...base, qty: 5, leverage: 10 });          // 50 € de perte (55 %) + liquidation avant SL
+  assert.equal(gros.ok, true);
+  assert.ok(gros.warnings.some((w) => /55/.test(w)) && gros.warnings.some((w) => /liquidation/.test(w)));
+  // Ce que Kraken refuserait reste bloqué
+  assert.equal(planFromQty({ ...base, qty: 50, leverage: 2 }).ok, false);                       // marge insuffisante
+  assert.equal(planFromQty({ ...base, direction: "SHORT", sl: 110, tps: [80], qty: 0.1, leverage: 1 }).ok, false); // short spot x1
+  // Mode automatique : risque 10 % accepté
+  const auto = planTrade({ ...base, riskPct: 10, leverage: 10 });
+  assert.equal(auto.ok, true);
+  // Avec garde-fous (par défaut), le même trade est bloqué
+  assert.equal(planFromQty({ ...base, strict: true, qty: 5, leverage: 10 }).ok, false);
+});
+
+test("marge isolée : stop facultatif, perte max = marge, marge libre respectée", async () => {
+  const { planFromQty, usedMarginEur, openRiskEur } = await import("../sizing.js");
+  const base = { direction: "LONG", entry: 100, tps: [110], balance: 90, riskPct: 1, maxRiskPct: 2, strict: false,
+    feeTaker: 0, feeMaker: 0, eurPerQuote: 1, lotDecimals: 4, venue: "spot" };
+  // Sans stop, x5 : 1 unité = 100 € de position, 20 € de marge → perte max 20 €
+  const p = planFromQty({ ...base, sl: null, qty: 1, leverage: 5 });
+  assert.equal(p.ok, true);
+  assert.equal(p.hasSl, false);
+  assert.ok(Math.abs(p.lossAtSlEur - 20) < 1e-9);
+  assert.ok(Math.abs(p.liqPrice - 84) < 1e-9);
+  assert.ok(p.warnings.some((w) => /liquidation/.test(w)));
+  // Stop au-delà de la liquidation : perte plafonnée à la marge
+  const loin = planFromQty({ ...base, sl: 70, qty: 1, leverage: 5 });
+  assert.ok(Math.abs(loin.lossAtSlEur - 20) < 1e-9 && loin.liqBeforeSl);
+  // Marge déjà utilisée par d'autres trades : 80 € bloqués → il reste 10 €
+  const open = [{ status: "ouvert", qty_remaining: 4, entry_price: 100, eur_per_quote: 1, leverage: 5, sl: null }];
+  assert.equal(usedMarginEur(open), 80);
+  assert.equal(openRiskEur(open[0]), 80);
+  const trop = planFromQty({ ...base, sl: null, qty: 1, leverage: 5, usedMarginEur: 80 });
+  assert.equal(trop.ok, false);
+  // Avec garde-fous : sans stop, 20 € = 22 % du solde → bloqué
+  assert.equal(planFromQty({ ...base, strict: true, sl: null, qty: 1, leverage: 5 }).ok, false);
+});

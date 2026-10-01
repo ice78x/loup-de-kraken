@@ -1,10 +1,13 @@
 // Mon compte : pseudo, solde (modifiable à tout moment), risque, historique du solde, et gestion des membres (admin).
 import { backend, DEMO } from "../data.js";
-import { busy, dt, esc, eur, num, toast } from "../ui.js";
+import { ago, busy, dt, esc, eur, num, toast } from "../ui.js";
+import { CATEGORIES, STATUTS } from "./ideas.js";
 
 export async function render(main, ctx) {
   const me = ctx.me;
-  const [hist, members] = await Promise.all([backend.balanceHistory(me.id), me.is_admin ? backend.members() : Promise.resolve([])]);
+  const [hist, members, ideas] = await Promise.all([backend.balanceHistory(me.id), me.is_admin ? backend.members() : Promise.resolve([]),
+    me.is_admin ? backend.ideas().catch(() => []) : Promise.resolve([])]);
+  const unseen = ideas.filter((i) => !i.seen).length;
   const pending = members.filter((m) => !m.approved);
   main.innerHTML = `
     <h1>Mon compte</h1>
@@ -15,10 +18,16 @@ export async function render(main, ctx) {
           <small>Mets ton solde réel Kraken (ou ton capital d'entraînement). Change-le quand tu veux.</small></label>
       </div>
       <div class="trois">
-        <label class="champ"><span>Risque par trade (%)</span><input name="risk" inputmode="decimal" value="${me.risk_pct}"><small>Conseillé : 1 %. Maximum 2 %.</small></label>
+        <label class="champ"><span>Risque par trade (%)</span><input name="risk" inputmode="decimal" value="${me.risk_pct}"><small>Conseillé : 1 %${me.guardrails === false ? "" : ". Maximum 2 %"}.</small></label>
         <label class="champ"><span>Risque ouvert max (%)</span><input name="open" inputmode="decimal" value="${me.max_open_risk_pct}"><small>Tous trades cumulés.</small></label>
         <label class="champ"><span>Perte max du jour (%)</span><input name="day" inputmode="decimal" value="${me.max_daily_loss_pct}"><small>Ensuite : stop jusqu'au lendemain.</small></label>
       </div>
+      <label class="interrupteur">
+        <input type="checkbox" name="guardrails" ${me.guardrails === false ? "" : "checked"}>
+        <span><b>Garde-fous du club</b> — bloque les trades au-delà de 2 % de risque, au-delà de ton risque cumulé,
+          après ta perte max du jour, ou si la liquidation arrive avant ton stop.
+          <span class="muted">Coupés : rien n'est bloqué, le site t'avertit seulement. Le stop loss reste demandé pour pouvoir suivre ton trade.</span></span>
+      </label>
       <p class="small muted" style="margin:0">Exemple : avec ${eur(+me.balance_eur)} et ${me.risk_pct} %, tu risques ${eur((me.balance_eur * me.risk_pct) / 100)} par trade.
         Ne monte jamais ton risque parce que tu peux redéposer de l'argent.</p>
       <button class="btn principal" type="submit">Enregistrer</button>
@@ -27,7 +36,23 @@ export async function render(main, ctx) {
     <section class="section"><h2>Historique de mon solde</h2>
       <div class="bloc"><ul>${hist.map((h) => `<li>${dt(h.created_at)} : ${eur(+h.old_balance)} → <b>${eur(+h.new_balance)}</b></li>`).join("") || "<li>Aucune modification.</li>"}</ul></div></section>
 
-    ${me.is_admin ? `<section class="section"><h2>Membres ${pending.length ? `<span class="pastille ambre">${pending.length} en attente</span>` : ""}</h2>
+    ${me.is_admin ? `<section class="section" id="idees-recues"><h2>💡 Idées reçues ${unseen ? `<span class="pastille ambre">${unseen} nouvelle${unseen > 1 ? "s" : ""}</span>` : ""}</h2>
+      <p class="muted">Les idées envoyées par les membres depuis l'onglet Idées. Toi seul les vois. Ta réponse s'affiche chez le membre.</p>
+      ${ideas.length ? ideas.map((i) => `<form class="bloc pile idee ${i.seen ? "" : "nouvelle"}" data-idea="${i.id}">
+        <div class="ligne entre"><b>${esc(i.title)}</b>${i.seen ? "" : '<span class="pastille ambre">nouvelle</span>'}</div>
+        <span class="small muted">${esc(i.profiles?.pseudo || "membre")} · ${esc(CATEGORIES[i.category] || i.category || "")} · ${ago(i.created_at)}</span>
+        ${i.body ? `<p class="small" style="margin:6px 0 0;white-space:pre-wrap">${esc(i.body)}</p>` : ""}
+        <div class="deux">
+          <label class="champ"><span>Statut</span><select name="status">${Object.entries(STATUTS).map(([k, [, l]]) => `<option value="${esc(k)}" ${k === i.status ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+          <label class="champ"><span>Ta réponse (visible par le membre)</span><textarea name="reply" rows="2" maxlength="1000">${esc(i.admin_reply || "")}</textarea></label>
+        </div>
+        <div class="ligne"><button class="btn principal" type="submit">Enregistrer${i.seen ? "" : " et marquer comme lue"}</button>
+          <button class="btn danger" type="button" data-del-idea="${i.id}">Supprimer</button></div>
+      </form>`).join("") : '<p class="muted">Aucune idée reçue pour l\'instant.</p>'}
+      <p class="small"><a href="#/bot">⚙️ Réglages et résultats du bot (réservé admin) →</a></p>
+    </section>
+
+    <section class="section"><h2>Membres ${pending.length ? `<span class="pastille ambre">${pending.length} en attente</span>` : ""}</h2>
       <p class="muted">Envoie l'adresse du site à tes amis. Après leur inscription, approuve-les ici.</p>
       <div class="table-wrap"><table><thead><tr><th>Membre</th><th>Inscrit</th><th>Statut</th><th></th></tr></thead><tbody>
       ${members.map((m) => `<tr><td>${esc(m.pseudo)}${m.id === me.id ? " (toi)" : ""}</td><td>${dt(m.created_at)}</td>
@@ -45,13 +70,25 @@ export async function render(main, ctx) {
     e.preventDefault();
     const f = e.target;
     const patch = { pseudo: f.pseudo.value.trim(), balance_eur: num(f.balance.value), risk_pct: num(f.risk.value),
-      max_open_risk_pct: num(f.open.value), max_daily_loss_pct: num(f.day.value) };
+      max_open_risk_pct: num(f.open.value), max_daily_loss_pct: num(f.day.value), guardrails: f.guardrails.checked };
+    const lim = patch.guardrails ? { risk: 2, open: 5, day: 10 } : { risk: 100, open: 100, day: 100 };
     if (!(patch.balance_eur >= 0)) return toast("Solde invalide.", true);
-    if (!(patch.risk_pct > 0 && patch.risk_pct <= 2)) return toast("Le risque par trade doit être entre 0,1 et 2 %.", true);
-    if (!(patch.max_open_risk_pct > 0 && patch.max_open_risk_pct <= 5)) return toast("Risque ouvert max : entre 0,1 et 5 %.", true);
-    if (!(patch.max_daily_loss_pct > 0 && patch.max_daily_loss_pct <= 10)) return toast("Perte max du jour : entre 0,1 et 10 %.", true);
+    if (!(patch.risk_pct > 0 && patch.risk_pct <= lim.risk)) return toast(`Le risque par trade doit être entre 0,1 et ${lim.risk} %.`, true);
+    if (!(patch.max_open_risk_pct > 0 && patch.max_open_risk_pct <= lim.open)) return toast(`Risque ouvert max : entre 0,1 et ${lim.open} %.`, true);
+    if (!(patch.max_daily_loss_pct > 0 && patch.max_daily_loss_pct <= lim.day)) return toast(`Perte max du jour : entre 0,1 et ${lim.day} %.`, true);
     busy(e.submitter, async () => { ctx.me = await backend.updateMe(me.id, patch); toast("Compte mis à jour."); render(main, ctx); });
   });
+  main.querySelectorAll("form[data-idea]").forEach((f) => f.addEventListener("submit", (e) => {
+    e.preventDefault();
+    busy(e.submitter, async () => {
+      await backend.setIdea(+f.dataset.idea, { status: f.status.value, admin_reply: f.reply.value.trim() || null, seen: true });
+      toast("Idée mise à jour."); render(main, ctx);
+    });
+  }));
+  main.querySelectorAll("[data-del-idea]").forEach((b) => b.addEventListener("click", () => {
+    if (!confirm("Supprimer cette idée ?")) return;
+    busy(b, async () => { await backend.deleteIdea(+b.dataset.delIdea); render(main, ctx); });
+  }));
   main.querySelector("#logout").addEventListener("click", () => backend.signOut());
   main.querySelectorAll("[data-approve]").forEach((b) => b.addEventListener("click", () => busy(b, async () => {
     await backend.setMember(b.dataset.approve, { approved: true }); toast("Membre approuvé."); render(main, ctx); })));

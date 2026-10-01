@@ -72,7 +72,9 @@ export function demoBackend() {
       { display: "SOL/USD", state: "WAIT", score: 31, asset_class: "crypto" },
       { display: "TSLAx/USD", state: "WAIT", score: 22, asset_class: "xstock" },
     ],
-    news: [{ title: "Exemple : la Fed publie son communiqué de politique monétaire", source: "Federal Reserve",
+    news: [{ title: "Example: Federal Reserve issues FOMC statement", title_fr: "Exemple : la Réserve fédérale publie son communiqué du FOMC",
+      explain: "Les décisions de la Fed (banque centrale américaine) font bouger le dollar et presque tous les marchés. Des taux en baisse sont souvent favorables aux cryptos et aux actions, des taux en hausse les freinent. Concerne tout le marché ; le sens n'est pas clair : regarde d'abord comment le prix réagit. (DÉMO)",
+      source: "Federal Reserve",
       published_at: ago(3), verified: true, impact_label: "fort", assets: [], fact: "Federal Reserve a publié : « … » (exemple)",
       interpretation: "[règles automatiques] Catégorie : Fed. Impact potentiel : fort. (DÉMO)" }],
     data_issues: [], report_text: "DÉMO",
@@ -102,8 +104,8 @@ export function demoBackend() {
     { key: "news_enabled", value: true, label: "Utiliser les news", help: "", min_value: null, max_value: null },
     { key: "quote_currencies", value: ["USD"], label: "Paires analysées", help: "Devise de cotation des paires que le bot peut proposer (USD par défaut).", min_value: null, max_value: null },
   ];
-  const ideas = [{ id: 1, title: "Ajouter une alerte Telegram quand un 🟢 sort", body: "", status: "proposée",
-    created_at: ago(20), user_id: "demo-2", profiles: { pseudo: "Nora" }, idea_votes: [{ user_id: "demo-me" }] }];
+  const ideas = [{ id: 1, title: "Ajouter une alerte Telegram quand un 🟢 sort", body: "Pour ne pas rater les trades imminents.", status: "proposée",
+    category: "site", seen: false, admin_reply: null, created_at: ago(20), user_id: "demo-2", profiles: { pseudo: "Nora" } }];
   const lb = () => members.filter((m) => m.approved).map((m) => {
     const c = trades.filter((t) => t.user_id === m.id && t.status === "clos");
     return { id: m.id, pseudo: m.pseudo, trades: c.length, wins: c.filter((t) => t.realized_pnl_eur > 0).length,
@@ -146,9 +148,10 @@ export function demoBackend() {
     deleteTrade: (id) => { trades.splice(trades.findIndex((x) => x.id === +id), 1); return ok({}); },
     leaderboard: () => ok(lb()),
     ideas: () => ok(ideas),
-    addIdea: (title, body) => { ideas.unshift({ id: Date.now(), title, body, status: "proposée", created_at: now(), user_id: "demo-me", profiles: { pseudo: me.pseudo }, idea_votes: [] }); return ok({}); },
+    addIdea: (title, body, category) => { ideas.unshift({ id: Date.now(), title, body, category, status: "proposée", seen: false, admin_reply: null,
+      created_at: now(), user_id: "demo-me", profiles: { pseudo: me.pseudo } }); return ok({}); },
     setIdea: (id, patch) => { Object.assign(ideas.find((i) => i.id === id), patch); return ok({}); },
-    vote: (id) => { ideas.find((i) => i.id === id).idea_votes.push({ user_id: "demo-me" }); return ok({}); },
-    unvote: (id) => { const i = ideas.find((x) => x.id === id); i.idea_votes = i.idea_votes.filter((v) => v.user_id !== "demo-me"); return ok({}); },
+    deleteIdea: (id) => { ideas.splice(ideas.findIndex((i) => i.id === id), 1); return ok({}); },
+    unseenIdeas: () => ok(ideas.filter((i) => !i.seen).length),
   };
 }

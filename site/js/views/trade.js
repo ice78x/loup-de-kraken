@@ -3,7 +3,7 @@ import { candleChart } from "../charts.js";
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
 import { krakenLink, ohlc, prices } from "../market.js";
-import { TP_SPLIT, closePart, unrealizedEur } from "../sizing.js";
+import { TP_SPLIT, closePart, pnlBreakdown } from "../sizing.js";
 import { STRAT, busy, cls, dt, esc, eur, modal, num, pq, px, rr, toast } from "../ui.js";
 
 const ev = (text) => ({ at: new Date().toISOString(), by: "membre", text });
@@ -14,7 +14,7 @@ export async function render(main, ctx, id) {
   const mine = t.user_id === ctx.me.id;
   const px0 = await prices([t], { fx: false });
   const price = px0.get(t)?.last ?? null;
-  const u = unrealizedEur(t, price);
+  const b = pnlBreakdown(t, price);
   const dir = t.direction === "LONG" ? "gain" : "perte";
 
   main.innerHTML = `
@@ -29,9 +29,13 @@ export async function render(main, ctx, id) {
     <dl class="chiffres">
       <div><dt>Entrée</dt><dd class="num">${pq(+t.entry_price, t.quote)}</dd></div>
       <div><dt>Prix actuel</dt><dd class="num">${price ? pq(price, t.quote) : "—"}</dd></div>
-      <div><dt>Encaissé</dt><dd class="num ${cls(+t.realized_pnl_eur)}">${eur(+t.realized_pnl_eur, true)}</dd></div>
-      ${t.status === "ouvert" ? `<div><dt>En cours</dt><dd class="num ${cls(u)}">${price ? eur(u, true) : "—"}</dd></div>` :
-        `<div><dt>Résultat</dt><dd class="num ${cls(+t.r_multiple)}">${rr(+t.r_multiple)}</dd></div>`}
+      ${t.status === "ouvert" ? `<div><dt>Si tu fermes maintenant</dt><dd class="num ${cls(b.ifCloseNow)}">${b.ifCloseNow != null ? eur(b.ifCloseNow, true) : "—"}</dd></div>
+      <div><dt>Mouvement du prix</dt><dd class="num ${cls(b.move)}">${b.move != null ? eur(b.move, true) : "—"}</dd></div>
+      <div><dt>Frais (entrée + sortie ≈)</dt><dd class="num perte">${eur(-(b.entryFee + (b.exitFee || 0)), true)}</dd></div>
+      ${Math.abs(b.banked) > 0.005 ? `<div><dt>TP encaissés</dt><dd class="num ${cls(b.banked)}">${eur(b.banked, true)}</dd></div>` : ""}` :
+        `<div><dt>Résultat</dt><dd class="num ${cls(+t.realized_pnl_eur)}">${eur(+t.realized_pnl_eur, true)}</dd></div>`}
+      ${t.status === "ouvert" ? "" :
+        `<div><dt>Résultat en R</dt><dd class="num ${cls(+t.r_multiple)}">${rr(+t.r_multiple)}</dd></div>`}
       <div><dt>Risque initial</dt><dd class="num">${eur(+t.risk_eur)}</dd></div>
       <div><dt>Quantité restante</dt><dd class="num">${+(+t.qty_remaining).toPrecision(6)} / ${+(+t.qty).toPrecision(6)}</dd></div>
     </dl>
@@ -40,7 +44,7 @@ export async function render(main, ctx, id) {
 
     <div class="split section">
       <figure><div class="graph" id="chart"></div><figcaption>Bougies 15 min en direct depuis Kraken.</figcaption></figure>
-      <div class="bloc">${ladder({ direction: t.direction, entryLow: +t.entry_price, entryHigh: +t.entry_price, sl: +t.sl, tps: [t.tp1, t.tp2, t.tp3].map((x) => x && +x), price })}</div>
+      <div class="bloc">${ladder({ direction: t.direction, entryLow: +t.entry_price, entryHigh: +t.entry_price, sl: +t.sl > 0 ? +t.sl : (t.liq_price ? +t.liq_price : null), slLabel: +t.sl > 0 ? "SL" : "Liq.", tps: [t.tp1, t.tp2, t.tp3].map((x) => x && +x), price })}</div>
     </div>
 
     ${mine && t.status === "ouvert" ? `<section class="section"><h2>Gérer</h2>
@@ -60,7 +64,7 @@ export async function render(main, ctx, id) {
     ${mine ? `<p><button class="btn danger" id="del">Supprimer ce trade (saisi par erreur)</button></p>` : ""}`;
 
   const el = main.querySelector("#chart");
-  const lines = [{ price: +t.entry_price, color: "#F2B544", title: "Entrée" }, { price: +t.sl, color: "#FF6B6B", title: "SL" },
+  const lines = [{ price: +t.entry_price, color: "#F2B544", title: "Entrée" }, ...(+t.sl > 0 ? [{ price: +t.sl, color: "#FF6B6B", title: "SL" }] : []), ...(t.liq_price ? [{ price: +t.liq_price, color: "#FF6B6B", title: "Liquidation", dashed: true }] : []),
     ...[t.tp1, t.tp2, t.tp3].map((x, i) => x && { price: +x, color: "#3DDC97", title: `TP${i + 1}`, width: 1 }).filter(Boolean)];
   let chart = null;
   ohlc(t, 15).then((c) => { if (el.isConnected && c?.length) chart = candleChart(el, c.slice(-160), { lines }); else el.innerHTML = '<p class="vide">Graphique indisponible.</p>'; })
@@ -101,8 +105,8 @@ export async function render(main, ctx, id) {
   })));
 
   main.querySelector("#move").addEventListener("click", () => modal(`
-    <h2>Déplacer le stop loss</h2><form class="form">
-      <label class="champ"><span>Nouveau SL</span><input name="sl" inputmode="decimal" value="${t.sl}">
+    <h2>${+t.sl > 0 ? "Déplacer le stop loss" : "Ajouter un stop loss"}</h2><form class="form">
+      <label class="champ"><span>Nouveau SL</span><input name="sl" inputmode="decimal" value="${t.sl ?? ""}">
         <small>Au prix d'entrée (${px(+t.entry_price)}) = break-even : tu ne peux plus perdre sur ce qui reste.</small></label>
       <div class="ligne"><button class="btn" type="button" id="be">Mettre au break-even</button></div>
       <div class="ligne"><button class="btn principal" type="submit">Enregistrer</button><button class="btn discret" type="button" data-close>Annuler</button></div></form>`,
@@ -114,7 +118,7 @@ export async function render(main, ctx, id) {
       const sign = t.direction === "LONG" ? 1 : -1;
       if (!(sl > 0) || (price && sign * (price - sl) <= 0)) return toast("Ce SL est déjà dépassé par le prix actuel.", true);
       await busy(e.submitter, async () => {
-        await backend.updateTrade(t.id, { sl, events: [...(t.events || []), ev(`SL déplacé de ${t.sl} à ${sl}`)] });
+        await backend.updateTrade(t.id, { sl, events: [...(t.events || []), ev(+t.sl > 0 ? `SL déplacé de ${t.sl} à ${sl}` : `Stop ajouté à ${sl}`)] });
         close(); toast("SL déplacé. Pense à le modifier aussi sur Kraken si c'est un trade réel."); reload();
       });
     });

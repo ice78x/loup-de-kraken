@@ -6,14 +6,17 @@ export const TP_SPLIT = [0.3, 0.4, 0.3];
 
 const floorStep = (x, decimals) => {
   const step = 10 ** -decimals;
-  return Math.floor(x / step + 1e-9) * step;
+  return +(Math.floor(x / step + 1e-9) * step).toFixed(Math.max(0, decimals));
 };
 
 export function checkLevels(direction, entry, sl, tps) {
   const errors = [];
-  if (!(entry > 0) || !(sl > 0)) return ["Entrée et SL doivent être des prix positifs."];
-  if (direction === "LONG" && sl >= entry) errors.push("En LONG, le SL doit être sous l'entrée.");
-  if (direction === "SHORT" && sl <= entry) errors.push("En SHORT, le SL doit être au-dessus de l'entrée.");
+  if (!(entry > 0)) return ["Le prix d'entrée doit être positif."];
+  if (sl != null) { // stop facultatif (marge isolée)
+    if (!(sl > 0)) return ["Le SL doit être un prix positif."];
+    if (direction === "LONG" && sl >= entry) errors.push("En LONG, le SL doit être sous l'entrée.");
+    if (direction === "SHORT" && sl <= entry) errors.push("En SHORT, le SL doit être au-dessus de l'entrée.");
+  }
   let prev = entry;
   tps.forEach((tp, i) => {
     if (tp == null) return;
@@ -36,6 +39,7 @@ export function planTrade(p) {
   const errors = checkLevels(direction, p.entry, p.sl, tps);
   const warnings = [];
   const lev = Math.round(p.leverage || 1);
+  if (!(p.sl > 0)) errors.push("Le mode automatique calcule la taille à partir du stop : indique un stop, ou choisis la quantité toi-même.");
   if (!(p.balance > 0)) errors.push("Ton solde doit être supérieur à 0 € (modifie-le dans Mon compte).");
   if (!(p.riskPct > 0)) errors.push("Le risque par trade doit être supérieur à 0 %.");
   if (lev < 1 || lev > 10) errors.push("Le multiplicateur doit être entre x1 et x10.");
@@ -58,7 +62,7 @@ export function planTrade(p) {
   const marginEur = notionalEur / lev;
   const slPct = (dist / p.entry) * 100;
   if (lev > 1 && slPct > 50 / lev) {
-    errors.push(`Avec x${lev}, la liquidation (≈ ${(100 / lev).toFixed(0)} % de mouvement) arriverait trop près de ton SL (${slPct.toFixed(1)} %). Baisse le multiplicateur.`);
+    (p.strict === false ? warnings : errors).push(`Avec x${lev}, la liquidation (≈ ${(100 / lev).toFixed(0)} % de mouvement) arriverait trop près de ton SL (${slPct.toFixed(1)} %). Baisse le multiplicateur.`);
   }
   if (marginEur > p.balance + 1e-9) {
     const need = Math.ceil(notionalEur / p.balance);
@@ -84,6 +88,122 @@ export function planTrade(p) {
   };
 }
 
+/** Distance (en fraction du prix) à laquelle Kraken liquide une position isolée : ≈ 80 % de la marge consommée (prudent). */
+export const liqFraction = (lev) => 0.8 / Math.max(1, lev);
+
+/** Prix de liquidation approximatif d'une position isolée (null : LONG spot sans levier, jamais liquidé). */
+export function liquidationPrice(direction, entry, lev, venue = "spot") {
+  if (!(entry > 0)) return null;
+  if (direction === "LONG" && lev <= 1 && venue === "spot") return null;
+  const d = liqFraction(lev);
+  return direction === "LONG" ? entry * (1 - d) : entry * (1 + d);
+}
+
+/** Marge déjà bloquée par les trades ouverts (marge isolée : chaque trade n'engage que la sienne). */
+export function usedMarginEur(trades) {
+  return trades.filter((t) => t.status === "ouvert")
+    .reduce((a, t) => a + (+t.qty_remaining * +t.entry_price * (+t.eur_per_quote || 1)) / Math.max(1, +t.leverage || 1), 0);
+}
+
+/**
+ * Mode « comme sur Kraken », MARGE ISOLÉE : le membre choisit la QUANTITÉ et le levier ; on calcule ce que ça implique.
+ * - Chaque trade n'engage que sa marge (valeur / levier). Le reste du capital n'est jamais touché par ce trade.
+ * - Stop loss FACULTATIF. Sans stop, la perte max = la marge (+ frais), atteinte à la liquidation.
+ * - Avec stop : perte au stop, plafonnée à la marge si la liquidation arrive avant.
+ * p : direction, entry, sl?, tps, qty, leverage, balance, usedMarginEur, riskPct, maxRiskPct, strict,
+ *     feeTaker, feeMaker, entryIsMaker, eurPerQuote, lotDecimals, ordermin, venue
+ */
+export function planFromQty(p) {
+  const direction = p.direction;
+  const tps = (p.tps || []).filter((x) => x != null && x > 0);
+  const errors = [], warnings = [];
+  const lev = Math.round(p.leverage || 1);
+  const hasSl = p.sl > 0;
+  const strict = p.strict !== false; // garde-fous du club (coupables dans Mon compte)
+  const guard = (msg) => (strict ? errors : warnings).push(msg);
+  if (!(p.entry > 0)) errors.push("Indique un prix d'entrée.");
+  else errors.push(...checkLevels(direction, p.entry, hasSl ? p.sl : null, tps));
+  if (!(p.balance > 0)) errors.push("Ton solde doit être supérieur à 0 € (modifie-le dans Mon compte).");
+  if (!(p.eurPerQuote > 0)) errors.push("Taux de conversion en euros indisponible.");
+  const qty = p.qty > 0 ? floorStep(p.qty, p.lotDecimals ?? 8) : 0;
+  if (!(qty > 0)) errors.push("Indique une quantité (ou un montant).");
+  if (lev < 1 || lev > 10) errors.push("Le levier doit être entre x1 et x10.");
+  if (direction === "SHORT" && (p.venue || "spot") === "spot" && lev < 2) {
+    errors.push("Sur Kraken, un SHORT en spot se fait sur marge : choisis au moins x2.");
+  }
+  if (errors.length) return { ok: false, errors, warnings };
+  if (p.ordermin && qty < p.ordermin) errors.push(`Quantité minimale sur Kraken : ${p.ordermin}.`);
+
+  const ft = (p.feeTaker ?? 0.4) / 100;
+  const fm = (p.feeMaker ?? p.feeTaker ?? 0.4) / 100;
+  const fe = p.entryIsMaker ? fm : ft;
+  const fx = p.eurPerQuote;
+  const notionalQuote = qty * p.entry;
+  const notionalEur = notionalQuote * fx;
+  const marginEur = notionalEur / lev;
+  const entryFeeEur = fe * p.entry * qty * fx;
+  const liqPrice = liquidationPrice(direction, p.entry, lev, p.venue || "spot");
+  // Perte max en marge isolée : toute la marge du trade + frais d'entrée. Jamais plus.
+  const capEur = marginEur + entryFeeEur;
+  let lossAtSlEur, slPct, dist, liqBeforeSl = false;
+  if (hasSl) {
+    dist = Math.abs(p.entry - p.sl);
+    slPct = (dist / p.entry) * 100;
+    const raw = (qty * dist + qty * (fe * p.entry + ft * p.sl)) * fx;
+    liqBeforeSl = liqPrice != null && (direction === "LONG" ? p.sl <= liqPrice : p.sl >= liqPrice);
+    lossAtSlEur = Math.min(raw, capEur);
+    if (liqBeforeSl) guard(`Avec x${lev}, la liquidation (≈ ${liqPrice.toPrecision(5)}) arrive AVANT ton stop : tu perdrais toute la marge du trade.`);
+  } else {
+    lossAtSlEur = capEur;
+    dist = liqPrice != null ? Math.abs(p.entry - liqPrice) : p.entry; // sans stop : jusqu'à la liquidation (ou 0 en LONG x1)
+    slPct = (dist / p.entry) * 100;
+    warnings.push(liqPrice != null
+      ? `Sans stop : si le prix atteint la liquidation (≈ ${liqPrice.toPrecision(5)}), tu perds toute la marge du trade. Le reste de ton capital n'est pas touché.`
+      : "Sans stop et sans levier : tu ne peux pas être liquidé, mais la position entière peut perdre de la valeur. Le reste de ton capital n'est pas touché.");
+  }
+  const lossPct = (lossAtSlEur / p.balance) * 100;
+  const free = p.balance - (p.usedMarginEur || 0);
+  if (marginEur > free + 1e-9) {
+    const need = Math.ceil(notionalEur / Math.max(free, 1e-9));
+    errors.push(free <= 0 ? "Plus de marge disponible : tes trades ouverts bloquent déjà tout ton solde."
+      : need <= 10 ? `Marge insuffisante : il reste ${free.toFixed(2)} € de marge libre (il faudrait au moins x${need}, ou moins de quantité).`
+        : "Marge insuffisante même à x10 : baisse la quantité.");
+  }
+  const maxRisk = p.maxRiskPct ?? 2;
+  if (lossPct > maxRisk + 1e-9) {
+    guard(strict ? `Règle du club : jamais plus de ${maxRisk} % du solde en jeu par trade. Ici tu peux perdre ${lossPct.toFixed(2)} % : ${hasSl ? "baisse la quantité" : "ajoute un stop ou baisse la quantité"}.`
+      : `Tu peux perdre ${lossPct.toFixed(2)} % de ton solde sur ce trade (la règle du club conseille ${maxRisk} % maximum).`);
+  } else if (p.riskPct && lossPct > p.riskPct + 1e-9) {
+    warnings.push(`Tu risques ${lossPct.toFixed(2)} % de ton solde, plus que ton risque habituel (${p.riskPct} %). Réservé aux setups exceptionnels.`);
+  }
+  if (hasSl) {
+    const feesShare = (qty * (fe * p.entry + ft * p.sl) * fx) / lossAtSlEur;
+    if (feesShare > 0.35) warnings.push(`Les frais représentent ${(feesShare * 100).toFixed(0)} % de ta perte au SL : SL très serré.`);
+  }
+  const split = TP_SPLIT.slice(0, tps.length);
+  const sum = split.reduce((a, b) => a + b, 0) || 1;
+  const riskUnit = lossAtSlEur / (qty * fx); // perte max par unité, frais compris
+  const rr = tps.map((tp) => Math.abs(tp - p.entry) / dist);
+  const rrNet = tps.map((tp) => (Math.abs(tp - p.entry) - fe * p.entry - fm * tp) / riskUnit);
+  const profitsEur = tps.map((tp, i) => {
+    const q = qty * (split[i] / sum);
+    return (q * Math.abs(tp - p.entry) - q * (fe * p.entry + fm * tp)) * fx;
+  });
+  return {
+    ok: errors.length === 0, errors, warnings, qty, notionalQuote, notionalEur, marginEur, lossAtSlEur, lossPct, hasSl, liqBeforeSl,
+    effectiveRiskPct: lossPct, slPct, liqPrice, rr, rrNet, profitsEur, leverage: lev, entryFeeEur, freeMarginEur: free,
+  };
+}
+
+/** Quantité qui fait perdre exactement riskPct % du solde au SL (frais compris) — bouton « taille pour risquer 1 % ». */
+export function qtyForRisk(p, riskPct) {
+  const ft = (p.feeTaker ?? 0.4) / 100, fm = (p.feeMaker ?? p.feeTaker ?? 0.4) / 100;
+  const fe = p.entryIsMaker ? fm : ft;
+  const perUnit = Math.abs(p.entry - p.sl) + fe * p.entry + ft * p.sl;
+  if (!(perUnit > 0) || !(p.eurPerQuote > 0) || !(p.balance > 0)) return null;
+  return floorStep(((p.balance * riskPct) / 100) / p.eurPerQuote / perUnit, p.lotDecimals ?? 8);
+}
+
 /** Plus petit multiplicateur qui permet de loger la position dans le solde (et reste sûr vs SL). */
 export function suggestLeverage(plan, balance, slPct, maxLev = 10) {
   if (!plan || !(plan.notionalEur > 0)) return 1;
@@ -96,6 +216,9 @@ export function suggestLeverage(plan, balance, slPct, maxLev = 10) {
 /** Risque encore engagé sur un trade ouvert (0 si le SL verrouille un gain). */
 export function openRiskEur(t) {
   if (t.status !== "ouvert") return 0;
+  if (!(+t.sl > 0)) { // pas de stop : en marge isolée, on peut perdre la marge restante du trade
+    return (+t.qty_remaining * +t.entry_price * (+t.eur_per_quote || 1)) / Math.max(1, +t.leverage || 1);
+  }
   const sign = t.direction === "LONG" ? 1 : -1;
   const loss = sign * (t.entry_price - t.sl) * t.qty_remaining;
   const fee = ((t.fee_pct || 0) / 100) * t.sl * t.qty_remaining;
@@ -146,4 +269,24 @@ export function unrealizedEur(t, price) {
   if (!(price > 0) || t.status !== "ouvert") return 0;
   const sign = t.direction === "LONG" ? 1 : -1;
   return sign * (price - t.entry_price) * t.qty_remaining * (t.eur_per_quote || 1);
+}
+
+/**
+ * Détail clair d'un trade ouvert, en € :
+ * - move : ce que le mouvement du prix rapporte/coûte sur la quantité restante (avant frais)
+ * - entryFee : frais payés à l'ouverture (déjà prélevés)
+ * - banked : ce que les TP déjà touchés ont rapporté (net de leurs frais)
+ * - exitFee : frais estimés si on ferme le reste maintenant
+ * - ifCloseNow : résultat total si on ferme tout maintenant = banked − entryFee + move − exitFee
+ */
+export function pnlBreakdown(t, price) {
+  const fx = +t.eur_per_quote || 1;
+  const fee = (+t.fee_pct || 0) / 100;
+  const entryFee = fee * +t.entry_price * +t.qty * fx;
+  const realized = +t.realized_pnl_eur || 0;
+  const banked = realized + entryFee;
+  const ok = price > 0 && t.status === "ouvert";
+  const move = ok ? unrealizedEur(t, price) : null;
+  const exitFee = ok ? fee * price * +t.qty_remaining * fx : null;
+  return { entryFee, banked, move, exitFee, ifCloseNow: ok ? realized + move - exitFee : null };
 }

@@ -232,3 +232,24 @@ def test_liste_des_paires_du_site_exacte_et_nettoyee(settings, tmp_path):
     assert "spot:ZEURZUSD" not in keys                     # le change EUR/USD n'est pas une paire de trading
     calls = [c for c in fk.calls if c == "/0/public/AssetPairs"]
     assert calls                                           # liste lue chez Kraken, jamais codée en dur
+
+
+def test_tracker_marge_isolee_sans_stop_liquidation():
+    """Sans stop, x5 : liquidation vers 84 (80 % de 1/5). Perte = toute la marge (100/5 = 20 €), jamais plus."""
+    t = _trade(sl=None, liq_price=84.0, leverage=5, risk_eur=20.0)
+    upd, ev = advance_trade(t, bars([(100, 101, 95, 96), (96, 97, 83, 85)]))
+    assert upd["status"] == "clos" and upd["close_reason"] == "Liquidation"
+    assert upd["realized_pnl_eur"] == pytest.approx(-20.0)
+    assert "LIQUIDATION" in ev[0]
+
+
+def test_tracker_liquidation_avant_un_stop_trop_loin():
+    t = _trade(sl=70.0, liq_price=84.0, leverage=5, risk_eur=20.0)
+    upd, _ = advance_trade(t, bars([(100, 100, 80, 81)]))
+    assert upd["close_reason"] == "Liquidation" and upd["realized_pnl_eur"] == pytest.approx(-20.0)
+
+
+def test_tracker_sans_stop_sans_levier_jamais_liquide():
+    t = _trade(sl=None, liq_price=None, leverage=1)
+    upd, _ = advance_trade(t, bars([(100, 100, 50, 60)]))
+    assert "status" not in upd and upd["qty_remaining"] == pytest.approx(1.0)

@@ -1,4 +1,5 @@
-// Le bot : comment il décide, ce que dit l'historique, les réglages que le club peut changer, les idées, et comment modifier le code avec Claude.
+// Le bot (ADMIN seulement) : comment il décide, ce que dit l'historique, ses réglages, et comment modifier le code avec Claude.
+// Les membres passent par la boîte à idées (#/idees) ; la base refuse aussi toute modification des réglages par un non-admin.
 import { backend } from "../data.js";
 import { STRAT, ago, busy, dt, esc, pct, rr, toast } from "../ui.js";
 
@@ -10,10 +11,15 @@ const PROMPTS = [
 ];
 
 export async function render(main, ctx) {
-  const [settings, log, edges, ideas] = await Promise.all([backend.settings(), backend.settingsLog(), backend.edges(), backend.ideas()]);
+  if (!ctx.me.is_admin) {
+    main.innerHTML = `<div class="vide"><strong>Réservé à l'administrateur</strong>Tu as une idée pour améliorer le bot ou le site ?
+      <a class="btn principal" href="#/idees" style="margin-top:12px">Proposer une idée</a></div>`;
+    return;
+  }
+  const [settings, log, edges] = await Promise.all([backend.settings(), backend.settingsLog(), backend.edges()]);
   main.innerHTML = `
     <h1>Le bot</h1>
-    <p>Chaque heure, de 6 h à 23 h, le bot analyse les marchés Kraken et publie ici ses trades. Tout le club peut le régler et proposer des améliorations.</p>
+    <p>Chaque heure, de 6 h à 23 h, le bot analyse les marchés Kraken et publie ici ses trades. Page réservée à l'admin : les membres envoient leurs idées depuis l'onglet Idées, tu les reçois dans Mon compte.</p>
 
     <section class="section"><h2>Comment il décide un trade</h2>
       <ol class="bloc pile" style="padding-left:36px">
@@ -38,17 +44,11 @@ export async function render(main, ctx) {
       <p class="small muted">Un bon résultat passé est une mesure, pas une promesse.</p></section>
 
     <section class="section"><h2>Réglages du bot</h2>
-      <p class="muted">Tout membre peut les changer. Chaque changement est noté ci-dessous et s'applique au scan suivant. Les limites de sécurité ne peuvent pas être dépassées.</p>
+      <p class="muted">Seul un admin peut les changer. Chaque changement est noté ci-dessous et s'applique au scan suivant. Les limites de sécurité ne peuvent pas être dépassées.</p>
       <div class="grille">${settings.map(settingCard).join("")}</div>
       <details style="margin-top:16px"><summary>Derniers changements</summary><ul>${log.map((l) => `<li class="small">${dt(l.created_at)} · <b>${esc(l.profiles?.pseudo || "bot")}</b> :
         ${esc(l.key)} ${esc(JSON.stringify(l.old_value))} → ${esc(JSON.stringify(l.new_value))}</li>`).join("") || "<li>Aucun</li>"}</ul></details></section>
 
-    <section class="section"><h2>Idées d'amélioration</h2>
-      <form class="form bloc" id="idea"><div class="deux">
-        <label class="champ"><span>Ton idée</span><input name="title" required minlength="3" maxlength="140" placeholder="Ex. alerte quand un 🟢 sort"></label>
-        <label class="champ"><span>Détails (facultatif)</span><input name="body" maxlength="1000"></label></div>
-        <button class="btn principal" type="submit">Proposer</button></form>
-      <div id="ideas" style="margin-top:12px">${ideas.map((i) => ideaRow(i, ctx)).join("") || '<p class="muted">Aucune idée pour l\'instant.</p>'}</div></section>
 
     <section class="section"><h2>Modifier le code avec Claude</h2>
       <div class="bloc pile">
@@ -64,24 +64,13 @@ export async function render(main, ctx) {
     let value;
     if (typeof s.value === "boolean") value = f.elements.v.checked;
     else if (Array.isArray(s.value)) value = [...f.querySelectorAll("input:checked")].map((c) => c.value);
-    if (s.key === "quote_currencies" && !value.length) return toast("Garde au moins une devise.", true);
     else value = +String(f.elements.v.value).replace(",", ".");
+    if (s.key === "quote_currencies" && !value.length) return toast("Garde au moins une devise.", true);
     if (typeof value === "number" && (!isFinite(value) || (s.min_value != null && value < s.min_value) || (s.max_value != null && value > s.max_value))) {
       return toast(`Valeur autorisée : entre ${s.min_value} et ${s.max_value}.`, true);
     }
     busy(e.submitter, async () => { await backend.setSetting(s.key, value); toast("Réglage enregistré : il s'applique au prochain scan."); render(main, ctx); });
   }));
-  main.querySelector("#idea").addEventListener("submit", (e) => {
-    e.preventDefault();
-    busy(e.submitter, async () => { await backend.addIdea(e.target.title.value.trim(), e.target.body.value.trim()); toast("Idée ajoutée."); render(main, ctx); });
-  });
-  main.querySelectorAll("[data-vote]").forEach((b) => b.addEventListener("click", () => busy(b, async () => {
-    const id = +b.dataset.vote;
-    await (b.dataset.voted ? backend.unvote(id) : backend.vote(id));
-    render(main, ctx);
-  })));
-  main.querySelectorAll("[data-status]").forEach((sel) => sel.addEventListener("change", () =>
-    backend.setIdea(+sel.dataset.status, { status: sel.value }).then(() => toast("Statut mis à jour."))));
   main.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", () => navigator.clipboard?.writeText(b.dataset.t).then(() => toast("Copié."))));
 }
 
@@ -104,15 +93,3 @@ function settingCard(s) {
     ${s.updated_at ? `<p class="small muted" style="margin:0">Modifié ${ago(s.updated_at)}</p>` : ""}</form>`;
 }
 
-function ideaRow(i, ctx) {
-  const voted = (i.idea_votes || []).some((v) => v.user_id === ctx.me.id);
-  const n = (i.idea_votes || []).length;
-  return `<div class="bloc ligne entre">
-    <div><b>${esc(i.title)}</b>${i.body ? `<p class="small muted" style="margin:4px 0 0">${esc(i.body)}</p>` : ""}
-      <span class="small muted">${esc(i.profiles?.pseudo)} · ${ago(i.created_at)}</span></div>
-    <div class="ligne">
-      ${ctx.me.is_admin ? `<select data-status="${i.id}" style="width:auto">${["proposée", "en cours", "faite", "refusée"].map((s) =>
-        `<option ${s === i.status ? "selected" : ""}>${s}</option>`).join("")}</select>` : `<span class="pastille">${esc(i.status)}</span>`}
-      <button class="btn ${voted ? "principal" : ""}" data-vote="${i.id}" ${voted ? "data-voted=1" : ""} aria-pressed="${voted}">👍 ${n}</button>
-    </div></div>`;
-}

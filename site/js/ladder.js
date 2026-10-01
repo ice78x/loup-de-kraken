@@ -2,7 +2,8 @@
 // On voit d'un coup d'œil combien on risque (rouge) et combien on peut gagner (vert).
 import { px } from "./ui.js";
 
-export function ladder({ direction, entryLow, entryHigh, sl, tps = [], price = null, compact = false, anim = false }) {
+export function ladder({ direction, entryLow, entryHigh, sl, tps = [], price = null, compact = false, anim = false, slLabel = "SL" }) {
+  if (!(sl > 0)) return ""; // ni stop ni liquidation (LONG sans levier) : pas d'échelle de risque
   const tp = tps.filter((x) => x != null);
   const vals = [sl, entryLow, entryHigh, ...tp, ...(price ? [price] : [])].filter((x) => x != null && isFinite(x));
   if (vals.length < 3) return "";
@@ -23,7 +24,7 @@ export function ladder({ direction, entryLow, entryHigh, sl, tps = [], price = n
       `<text x="0" y="${+yy + 4}" class="lbl">${name}</text>` +
       `<text x="${W}" y="${+yy - 4}" text-anchor="end">${px(v)}${extra}</text>`;
   };
-  rows.push(line(sl, "#FF6B6B", "SL", " · −1R"));
+  rows.push(line(sl, "#FF6B6B", slLabel, " · −1R"));
   tp.forEach((t, i) => rows.push(line(t, "#3DDC97", `TP${i + 1}`, ` · +${(Math.abs(t - entry) / risk).toFixed(1)}R`)));
   rows.push(line(entry, "#F2B544", "Entrée"));
   if (price) {

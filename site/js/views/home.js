@@ -40,9 +40,22 @@ export function ticket(s, me, { href = true } = {}) {
   </${tag}>`;
 }
 
+/** Une news : titre en français, ce que ça peut changer, puis les faits (titre original, source, heure). */
+export function newsBlock(n) {
+  const etat = n.is_rumor ? '<span class="pastille short">rumeur</span>' : n.verified ? '<span class="pastille long">vérifiée</span>' : '<span class="pastille">non vérifiée</span>';
+  return `<details class="news"><summary><b>${esc(n.title_fr || n.title)}</b>
+      <span class="small muted">· ${esc(n.source)} · ${ago(n.published_at || n.published)}</span> ${etat}
+      ${n.impact_label && n.impact_label !== "—" ? `<span class="pastille ${n.impact_label === "fort" ? "ambre" : ""}">impact ${esc(n.impact_label)}</span>` : ""}</summary>
+    ${n.explain ? `<p><b>Ce que ça peut changer :</b> ${esc(n.explain)}</p>` : ""}
+    <p class="small muted"><b>Titre original (${esc(n.source)}) :</b> ${esc(n.title)}${n.title_fr ? "" : " <i>(traduction indisponible)</i>"}</p>
+    ${n.interpretation ? `<p class="small muted"><b>Lecture du bot :</b> ${esc(n.interpretation)}</p>` : ""}
+    ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">Lire la source</a>` : ""}</details>`;
+}
+
 export async function render(main, ctx) {
   const me = ctx.me;
-  const [scan, mine] = await Promise.all([backend.latestScan(), backend.trades({ userId: me.id, limit: 300 })]);
+  const [scan, mine, newIdeas] = await Promise.all([backend.latestScan(), backend.trades({ userId: me.id, limit: 300 }),
+    me.is_admin ? backend.unseenIdeas().catch(() => 0) : Promise.resolve(0)]);
   const sigs = scan ? await backend.signalsOf(scan.id) : [];
   const trades = sigs.filter((s) => s.status === "TRADE");
   const watch = sigs.filter((s) => s.status === "WATCH");
@@ -52,6 +65,7 @@ export async function render(main, ctx) {
   const icon = scan?.verdict === "TRADE" ? "🟢" : scan?.verdict === "WATCH" ? "🟡" : "🛑";
 
   main.innerHTML = `
+    ${newIdeas ? `<a class="alerte lien-alerte" href="#/compte">💡 <b>${newIdeas} nouvelle${newIdeas > 1 ? "s" : ""} idée${newIdeas > 1 ? "s" : ""}</b> d'amélioration reçue${newIdeas > 1 ? "s" : ""} → Mon compte</a>` : ""}
     <section class="verdict">
       <img src="img/logo.svg" alt="">
       <div>
@@ -68,7 +82,8 @@ export async function render(main, ctx) {
       <div><dt>Résultat du jour</dt><dd class="num ${cls(budget.todayPnl)}">${eur(budget.todayPnl, true)}</dd></div>
     </dl>
     ${budget.dailyStop ? `<div class="alerte rouge"><strong>Stop pour aujourd'hui.</strong> Tu as atteint ta perte maximale du jour
-      (${pct(+me.max_daily_loss_pct)}). Le site bloque les nouveaux trades jusqu'à demain.</div>` : ""}
+      (${pct(+me.max_daily_loss_pct)}). ${me.guardrails === false ? "Tes garde-fous sont coupés : rien n'est bloqué, mais c'est souvent le moment de faire une pause."
+        : "Le site bloque les nouveaux trades jusqu'à demain."}</div>` : ""}
 
     <div class="ligne" style="margin-top:16px">
       <button class="btn principal" id="scan-now">Scanner maintenant</button>
@@ -114,11 +129,9 @@ export async function render(main, ctx) {
         return `<span class="pastille ${k}" title="score ${o.score ?? "—"}">${esc(o.display)} · ${esc(o.state === "WAIT" ? "attendre" : o.state.toLowerCase())}</span>`;
       }).join("")}</div></section>` : ""}
 
-    ${scan?.news?.length ? `<section class="section"><h2>News importantes</h2>${scan.news.slice(0, 6).map((n) => `
-      <details><summary>${esc(n.title)} <span class="muted small">· ${esc(n.source)} · ${ago(n.published_at)} ·
-        ${n.verified ? "vérifiée" : n.is_rumor ? "rumeur" : "non vérifiée"}</span></summary>
-        <p><strong>Fait :</strong> ${esc(n.fact)}</p><p class="muted"><strong>Interprétation :</strong> ${esc(n.interpretation)}</p>
-        ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">Lire la source</a>` : ""}</details>`).join("")}</section>` : ""}
+    ${scan?.news?.length ? `<section class="section"><h2>News importantes</h2>
+      <p class="small muted">Titres traduits automatiquement. Le titre original et la source restent la référence.</p>
+      ${scan.news.slice(0, 6).map(newsBlock).join("")}</section>` : ""}
 
     ${scan?.data_issues?.length ? `<section class="section"><details><summary>Problèmes de données au dernier scan (${scan.data_issues.length})</summary>
       <ul>${scan.data_issues.slice(0, 12).map((d) => `<li class="small">${esc(d)}</li>`).join("")}</ul></details></section>` : ""}

@@ -16,7 +16,7 @@ export async function render(main) {
     <h1>Marchés Kraken Pro France</h1>
     <p class="muted">${insts.length ? `<b>${insts.length} paires</b> disponibles pour la France, lues directement chez Kraken
       (${maj ? `mise à jour ${ago(maj)}` : "à chaque scan"}).` : "La liste arrive après le premier scan du bot."}
-      Seules les paires négociables en ce moment, dans tes devises (page <a href="#/bot">Le bot</a> → Paires analysées), sont listées.</p>
+      Seules les paires négociables en ce moment, dans les devises choisies par l'admin (USD par défaut), sont listées.</p>
     <div class="bloc pile">
       <p class="small">Chaque heure, le bot <b>survole toutes ces paires</b> (prix, volume, écart achat/vente), puis analyse
         <b>en profondeur les plus liquides et les plus actives</b> (${scan?.counts?.["analysés"] ?? "—"} au dernier scan).

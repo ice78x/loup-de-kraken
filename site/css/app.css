@@ -362,3 +362,17 @@ details.espace[open] > summary::before { content: "▾ "; }
   background: var(--houle); border: 1px solid var(--ligne); border-radius: var(--r-champ); }
 .marche b { font-family: var(--titre); }
 .marche .pastille { margin-left: auto; }
+
+/* Formulaire de trade : choix de la taille */
+[data-size][hidden] { display: none !important; }
+.btn.mini { padding: 4px 10px; font-size: .85rem; min-height: 0; }
+
+/* Interrupteur (Mon compte : garde-fous) */
+.interrupteur { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--ligne); border-radius: var(--r-champ); background: var(--abysse); cursor: pointer; }
+.interrupteur input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--ambre); flex: none; }
+
+/* Boîte à idées */
+.idee { gap: 6px; }
+.idee.nouvelle { border-color: var(--ambre); }
+.idee .reponse { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--ambre); background: var(--ambre-fond); border-radius: 8px; font-size: .93rem; }
+a.lien-alerte { display: block; text-decoration: none; color: var(--ecume); margin-bottom: 16px; }

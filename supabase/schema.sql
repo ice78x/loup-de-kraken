@@ -11,13 +11,26 @@ create table if not exists public.profiles (
   id                  uuid primary key references auth.users(id) on delete cascade,
   pseudo              text not null default 'Loup',
   balance_eur         numeric(14,2) not null default 90 check (balance_eur >= 0),
-  risk_pct            numeric(4,2)  not null default 1  check (risk_pct > 0 and risk_pct <= 2),
-  max_open_risk_pct   numeric(4,2)  not null default 2  check (max_open_risk_pct > 0 and max_open_risk_pct <= 5),
-  max_daily_loss_pct  numeric(4,2)  not null default 3  check (max_daily_loss_pct > 0 and max_daily_loss_pct <= 10),
+  risk_pct            numeric(5,2)  not null default 1  check (risk_pct > 0 and risk_pct <= 100),
+  max_open_risk_pct   numeric(5,2)  not null default 2  check (max_open_risk_pct > 0 and max_open_risk_pct <= 100),
+  max_daily_loss_pct  numeric(5,2)  not null default 3  check (max_daily_loss_pct > 0 and max_daily_loss_pct <= 100),
   approved            boolean not null default false,
   is_admin            boolean not null default false,
   created_at          timestamptz not null default now()
 );
+
+-- Garde-fous du club (1-2 % par trade, risque cumulé, perte du jour) : chaque membre peut les couper pour lui-même.
+-- Coupés, le site n'empêche plus rien (avertissements seulement). Le bot, lui, garde ses règles pour ses propositions.
+alter table public.profiles add column if not exists guardrails boolean not null default true;
+alter table public.profiles alter column risk_pct type numeric(5,2);
+alter table public.profiles alter column max_open_risk_pct type numeric(5,2);
+alter table public.profiles alter column max_daily_loss_pct type numeric(5,2);
+alter table public.profiles drop constraint if exists profiles_risk_pct_check;
+alter table public.profiles add constraint profiles_risk_pct_check check (risk_pct > 0 and risk_pct <= 100);
+alter table public.profiles drop constraint if exists profiles_max_open_risk_pct_check;
+alter table public.profiles add constraint profiles_max_open_risk_pct_check check (max_open_risk_pct > 0 and max_open_risk_pct <= 100);
+alter table public.profiles drop constraint if exists profiles_max_daily_loss_pct_check;
+alter table public.profiles add constraint profiles_max_daily_loss_pct_check check (max_daily_loss_pct > 0 and max_daily_loss_pct <= 100);
 
 create table if not exists public.balance_history (
   id          bigint generated always as identity primary key,
@@ -245,6 +258,19 @@ create table if not exists public.ideas (
   created_at timestamptz not null default now()
 );
 
+-- Idées : boîte privée. Chaque membre voit seulement les siennes ; l'admin les reçoit toutes et répond.
+-- Marge isolée : stop facultatif ; sans stop, la perte max est la marge du trade (liquidation au prix liq_price).
+alter table public.trades alter column sl drop not null;
+alter table public.trades add column if not exists liq_price numeric;
+
+alter table public.ideas add column if not exists category    text not null default 'bot';
+alter table public.ideas add column if not exists admin_reply text;
+alter table public.ideas add column if not exists seen        boolean not null default false;
+alter table public.ideas drop constraint if exists ideas_category_check;
+alter table public.ideas add constraint ideas_category_check check (category in ('bot','site','trading','autre'));
+alter table public.ideas drop constraint if exists ideas_body_check;
+alter table public.ideas add constraint ideas_body_check check (body is null or length(body) <= 2000);
+
 create table if not exists public.idea_votes (
   idea_id bigint references public.ideas(id) on delete cascade,
   user_id uuid default auth.uid() references public.profiles(id) on delete cascade,
@@ -340,20 +366,21 @@ create policy "modifier ses trades" on public.trades for update
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "supprimer ses trades" on public.trades for delete using (user_id = auth.uid());
 
--- Réglages du bot : tout membre approuvé peut les améliorer (bornes vérifiées + journal)
+-- Réglages du bot : lisibles par le club, modifiables UNIQUEMENT par un admin (bornes vérifiées + journal)
 create policy "lecture réglages" on public.bot_settings for select using (public.is_approved());
 create policy "modifier réglages" on public.bot_settings for update
-  using (public.is_approved()) with check (public.is_approved());
-create policy "lecture journal réglages" on public.bot_settings_log for select using (public.is_approved());
+  using (public.is_admin()) with check (public.is_admin());
+create policy "lecture journal réglages" on public.bot_settings_log for select using (public.is_admin());
 
 -- Idées
-create policy "lecture idées" on public.ideas for select using (public.is_approved());
-create policy "proposer une idée" on public.ideas for insert with check (user_id = auth.uid() and public.is_approved());
+create policy "lecture idées" on public.ideas for select using (user_id = auth.uid() or public.is_admin());
+create policy "proposer une idée" on public.ideas for insert
+  with check (user_id = auth.uid() and public.is_approved() and seen = false and admin_reply is null and status = 'proposée');
 create policy "modifier son idée" on public.ideas for update
-  using (user_id = auth.uid() or public.is_admin()) with check (user_id = auth.uid() or public.is_admin());
+  using (public.is_admin()) with check (public.is_admin());
 create policy "supprimer son idée" on public.ideas for delete using (user_id = auth.uid() or public.is_admin());
-create policy "lecture votes" on public.idea_votes for select using (public.is_approved());
-create policy "voter" on public.idea_votes for insert with check (user_id = auth.uid() and public.is_approved());
+create policy "lecture votes" on public.idea_votes for select using (user_id = auth.uid() or public.is_admin());
+create policy "voter" on public.idea_votes for insert with check (false); -- votes retirés (boîte à idées privée)
 create policy "retirer son vote" on public.idea_votes for delete using (user_id = auth.uid());
 
 -- Demandes de scan (bouton SCAN du site)

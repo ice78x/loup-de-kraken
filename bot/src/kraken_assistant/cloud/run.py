@@ -27,6 +27,7 @@ from ..portfolio.management import advise
 from ..portfolio.positions import Position
 from ..scanner.formatter import format_report
 from ..scanner.scan import scan
+from ..news.translate import Translator, explain
 from .supabase_rest import Supabase, SupabaseError
 from .tracker import advance_trade
 
@@ -85,7 +86,15 @@ def _candles(a, n: int = 96) -> list:
              round(float(r.close), 10)] for ts, r in df.iterrows()]
 
 
-def signal_rows(rep, scan_id: int) -> list[dict]:
+def news_row(n, tr=None, translate: bool = True) -> dict:
+    """News pour le site : faits (titre original, source, heure) + titre en français + explication simple."""
+    return {"title": n.title, "title_fr": tr.fr(n.title) if (tr and translate) else None, "explain": explain(n),
+            "source": n.source, "url": n.url, "published_at": n.published_at.isoformat(), "fetched_at": n.fetched_at.isoformat(),
+            "assets": n.assets, "impact_label": n.impact_label, "verified": n.verified, "is_rumor": n.is_rumor,
+            "fact": n.fact, "interpretation": n.interpretation, "categories": n.categories}
+
+
+def signal_rows(rep, scan_id: int, tr=None) -> list[dict]:
     rows = []
     exp = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
     for sig in rep.trades:
@@ -94,8 +103,7 @@ def signal_rows(rep, scan_id: int) -> list[dict]:
         rows.append(_row(st, inst, a, rep, scan_id, "TRADE", exp) | {
             "leverage_ref": p.leverage, "rr_net": p.r_multiples_net, "warnings": sig.warnings,
             "catalyst": sig.catalyst_label, "fee_taker_pct": sig.fee_pct, "fee_maker_pct": sig.maker_fee_pct,
-            "sources": [{"source": n.source, "title": n.title, "url": n.url, "published": n.published_at.isoformat(),
-                         "fact": n.fact, "interpretation": n.interpretation} for n in sig.news]})
+            "sources": [news_row(n, tr) | {"published": n.published_at.isoformat()} for n in sig.news]})
     for w in rep.watch:
         a = rep.analyses.get(w.inst_key)
         if a:
@@ -117,15 +125,14 @@ def _row(st, inst, a, rep, scan_id, status, exp) -> dict:
     }
 
 
-def push_scan(sb: Supabase, rep) -> int:
-    d = rep.to_dict()
+def push_scan(sb: Supabase, rep, tr=None) -> int:
     row = sb.insert("scans", {
         "mode": rep.mode, "verdict": rep.verdict, "report_text": format_report(rep),
         "reasons": rep.no_trade_reasons, "counts": rep.counts, "opportunities": rep.opportunities[:60],
-        "news": [{k: n[k] for k in ("title", "source", "url", "published_at", "fetched_at", "assets", "impact_label",
-                                    "verified", "is_rumor", "fact", "interpretation", "categories")} for n in d["news"]],
+        # Les 10 premières news (celles affichées) sont traduites ; les autres gardent leur titre original.
+        "news": [news_row(n, tr, translate=i < 10) for i, n in enumerate(rep.news)],
         "data_issues": rep.data_issues[:30], "duration_s": rep.duration_s})[0]
-    rows = signal_rows(rep, row["id"])
+    rows = signal_rows(rep, row["id"], tr)
     if rows:
         sb.insert("signals", rows, returning=False)
     return row["id"]
@@ -189,11 +196,17 @@ def track_trades(sb: Supabase, app: App) -> int:
             for e in events:
                 log.info("trade #%s %s : %s", t["id"], t["display"], e)
         merged = {**t, **upd}
-        if merged.get("status") == "ouvert" and frames is not None:
+        if merged.get("status") == "ouvert" and frames is not None and merged.get("sl") is None:
+            liq = merged.get("liq_price")
+            upd.update(advice=(f"HOLD — pas de stop : marge isolée, liquidation vers {float(liq):.6g}. "
+                               "Pense à poser un stop si le scénario s'invalide." if liq else
+                               "HOLD — pas de stop et pas de levier : surveille l'invalidation de ton scénario.")[:500],
+                       advice_at=datetime.now(timezone.utc).isoformat())
+        elif merged.get("status") == "ouvert" and frames is not None:
             pos = Position(id=t["id"], source=t["mode"], instrument_key=key, display=t["display"], base="",
                            venue=t.get("venue") or "", asset_class=t.get("asset_class") or "",
                            direction=t["direction"], entry=float(t["entry_price"]), qty_initial=float(t["qty"]),
-                           qty_remaining=float(merged["qty_remaining"]), sl=float(t["sl"]),
+                           qty_remaining=float(merged["qty_remaining"]), sl=float(merged["sl"]),
                            tp1=t.get("tp1"), tp2=t.get("tp2"), tp3=t.get("tp3"), tp1_hit=merged["tp1_hit"],
                            tp2_hit=merged["tp2_hit"], tp3_hit=merged["tp3_hit"], status="open",
                            eur_per_quote=float(t.get("eur_per_quote") or 1), fee_rate_pct=float(t.get("fee_pct") or 0),
@@ -236,7 +249,7 @@ def _main(cmd: str) -> int:
     if cmd == "scan":
         rep = scan(app, mode=os.environ.get("SCAN_MODE", "normal"))
         print(format_report(rep), flush=True)
-        sid = push_scan(sb, rep)
+        sid = push_scan(sb, rep, Translator(app.db))
         log.info("scan %s envoyé au site (verdict %s)", sid, rep.verdict)
         try:
             push_instruments(sb, app)

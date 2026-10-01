@@ -2,6 +2,8 @@
 
 Mêmes règles que le paper trading : SL testé avant les TP dans une même bougie (prudence),
 TP1 30 % / TP2 40 % / TP3 le reste, frais appliqués à chaque sortie.
+Marge isolée : le stop est facultatif. Si la liquidation (liq_price) est touchée avant le stop, le trade perd
+toute la marge restante (valeur restante / levier) et rien de plus.
 Aucun prix n'est inventé : sans bougie réelle, rien ne bouge.
 """
 from __future__ import annotations
@@ -27,7 +29,10 @@ def advance_trade(t: dict, bars5: pd.DataFrame, split: tuple[float, float, float
     if t.get("status") != "ouvert":
         return upd, events
     sign = 1 if t["direction"] == "LONG" else -1
-    entry, sl = float(t["entry_price"]), float(t["sl"])
+    entry = float(t["entry_price"])
+    sl = _f(t.get("sl"))
+    liq = _f(t.get("liq_price"))
+    lev = max(1.0, _f(t.get("leverage"), 1.0) or 1.0)
     qty, rem = float(t["qty"]), float(t["qty_remaining"])
     epq, fee = float(t.get("eur_per_quote") or 1), float(t.get("fee_pct") or 0) / 100
     realized = float(t.get("realized_pnl_eur") or 0)
@@ -39,7 +44,15 @@ def advance_trade(t: dict, bars5: pd.DataFrame, split: tuple[float, float, float
     closed = False
     for ts, b in new.iterrows():
         adverse = b["low"] if sign > 0 else b["high"]
-        if sign * (adverse - sl) <= 0:
+        # Le niveau défavorable le plus proche de l'entrée est touché en premier : stop ou liquidation.
+        liq_first = liq is not None and (sl is None or sign * (liq - sl) >= 0)
+        if liq_first and sign * (adverse - liq) <= 0:
+            realized -= rem * entry * epq / lev  # marge isolée restante perdue, rien de plus
+            events.append(f"{ts:%d/%m %H:%M} LIQUIDATION vers {liq:g} : marge du trade perdue")
+            upd.update(exit_price=liq, close_reason="Liquidation")
+            rem, closed = 0.0, True
+            break
+        if sl is not None and sign * (adverse - sl) <= 0:
             px = min(float(b["open"]), sl) if sign > 0 else max(float(b["open"]), sl)
             realized += sign * (px - entry) * rem * epq - fee * px * rem * epq
             events.append(f"{ts:%d/%m %H:%M} SL touché à {px:g}")

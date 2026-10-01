@@ -5,6 +5,7 @@ import { LEGENDE, chiffres, idee, planTable } from "../setup.js";
 import { eurPerQuote, krakenLink, prices } from "../market.js";
 import { STRAT, ago, dt, esc, pq, px } from "../ui.js";
 import { tradeForm } from "./tradeform.js";
+import { newsBlock } from "./home.js";
 
 export async function render(main, ctx, id) {
   const s = await backend.signal(id);
@@ -54,8 +55,7 @@ export async function render(main, ctx, id) {
         <h2>Pourquoi le bot le propose</h2>
         <ul>${(s.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
         <p><b>Catalyseur :</b> ${esc(s.catalyst || "aucun")}</p>
-        ${(s.sources || []).map((n) => `<details><summary>${esc(n.title)}</summary><p><b>Fait :</b> ${esc(n.fact)}</p>
-          <p class="muted"><b>Interprétation :</b> ${esc(n.interpretation)}</p>${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">Source (${esc(n.source)})</a>` : ""}</details>`).join("")}
+        ${(s.sources || []).map(newsBlock).join("")}
         ${s.edge_note ? `<p class="small muted">${esc(s.edge_note)}</p>` : ""}
         ${(s.warnings || []).length ? `<div class="alerte"><ul>${s.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
       </div>

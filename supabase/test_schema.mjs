@@ -44,6 +44,11 @@ await fails(as(U2, "update public.profiles set approved = true where id = $1", [
 await as(U2, "update public.profiles set balance_eur = 120 where id = $1", [U2]);
 r = await as(U2, "select new_balance from public.balance_history");
 assert.equal(+r.rows[0].new_balance, 120);
+await as(U2, "update public.profiles set guardrails = false, risk_pct = 10, max_open_risk_pct = 50, max_daily_loss_pct = 100 where id = $1", [U2]);
+r = await as(U2, "select guardrails, risk_pct from public.profiles where id = $1", [U2]);
+assert.equal(r.rows[0].guardrails, false); assert.equal(+r.rows[0].risk_pct, 10);
+await fails(as(U2, "update public.profiles set risk_pct = 150 where id = $1", [U2]), /check/);
+await as(U2, "update public.profiles set guardrails = true, risk_pct = 1, max_open_risk_pct = 2, max_daily_loss_pct = 3 where id = $1", [U2]);
 console.log("✓ membre en attente : ne voit que lui, ne peut pas s'auto-approuver, solde modifiable + historisé");
 
 const tradeSql = `insert into public.trades (instrument_key, display, direction, entry_price, sl, qty, qty_remaining, risk_eur)
@@ -62,23 +67,35 @@ r = await as(U1, "select id from public.trades");
 assert.equal(r.rows.length, 1);
 console.log("✓ admin approuve ; chacun voit les trades du club mais ne modifie que les siens");
 
-await fails(as(U2, "update public.bot_settings set value = '99' where key = 'score_trade'"), /trop haute/);
+// Un membre ne peut PAS changer les réglages (la mise à jour ne touche aucune ligne)
 await as(U2, "update public.bot_settings set value = '65' where key = 'score_trade'");
-r = await as(U2, "select key, new_value, changed_by from public.bot_settings_log");
-assert.equal(r.rows[0].changed_by, U2);
+r = await as(U1, "select value from public.bot_settings where key = 'score_trade'");
+assert.notEqual(String(r.rows[0].value), "65");
+await fails(as(U1, "update public.bot_settings set value = '99' where key = 'score_trade'"), /trop haute/);
+await as(U1, "update public.bot_settings set value = '65' where key = 'score_trade'");
+r = await as(U1, "select key, new_value, changed_by from public.bot_settings_log");
+assert.equal(r.rows[0].changed_by, U1);
+assert.equal((await as(U2, "select count(*)::int n from public.bot_settings_log")).rows[0].n, 0);
 await fails(as(U2, "insert into public.signals (status, instrument_key, display, direction) values ('TRADE','k','d','LONG')"), /row-level security/);
-console.log("✓ réglages du bot : bornes respectées + journal ; signaux réservés au bot");
+console.log("✓ réglages du bot : admin seulement, bornes respectées + journal ; signaux réservés au bot");
 
 await as(U2, "update public.trades set status = 'clos', realized_pnl_eur = 3, r_multiple = 1.5 where id = $1", [t2.id]);
 r = await as(U1, "select pseudo, trades, wins, pnl_eur from public.leaderboard order by pseudo");
 assert.equal(+r.rows.find((x) => x.pseudo === "b").pnl_eur, 3);
 console.log("✓ classement calculé");
+await as(U2, "insert into public.trades (instrument_key, display, direction, entry_price, sl, liq_price, leverage, qty, qty_remaining, risk_eur) values ('spot:X', 'X/USD', 'LONG', 100, null, 84, 5, 1, 1, 20)");
+console.log("✓ marge isolée : trade sans stop accepté (liquidation enregistrée)");
 
-await as(U2, "insert into public.ideas (title) values ('Alerte Telegram')");
-const idea = (await as(U1, "select id from public.ideas")).rows[0].id;
-await as(U1, "insert into public.idea_votes (idea_id) values ($1)", [idea]);
+await as(U2, "insert into public.ideas (title, body, category) values ('Alerte Telegram', 'quand un 🟢 sort', 'site')");
+await as(U1, "insert into public.ideas (title) values ('Idée de l''admin')");
+r = await as(U2, "select title from public.ideas");
+assert.deepEqual(r.rows.map((x) => x.title), ["Alerte Telegram"]);           // un membre ne voit que ses idées
+const idea = (await as(U1, "select id from public.ideas where title = 'Alerte Telegram'")).rows[0].id;  // l'admin les voit toutes
+await as(U2, "update public.ideas set status = 'faite' where id = $1", [idea]);  // le membre ne peut pas changer le statut
+assert.equal((await as(U1, "select status from public.ideas where id = $1", [idea])).rows[0].status, "proposée");
+await as(U1, "update public.ideas set status = 'en cours', seen = true, admin_reply = 'Bonne idée' where id = $1", [idea]);
+assert.equal((await as(U2, "select admin_reply from public.ideas")).rows[0].admin_reply, "Bonne idée");
+await fails(as(U2, "insert into public.ideas (title, admin_reply) values ('Triche', 'auto')"), /row-level security/);
 await fails(as(U2, "update public.profiles set is_admin = true where id = $1", [U2]), /administrateur/);
-r = await as(U2, "select count(*)::int n from public.idea_votes");
-assert.equal(r.rows[0].n, 1);
-console.log("✓ idées et votes");
+console.log("✓ boîte à idées privée : le membre voit les siennes, l'admin les reçoit toutes et répond");
 console.log("\nSCHÉMA OK");

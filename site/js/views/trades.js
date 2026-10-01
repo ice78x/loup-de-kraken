@@ -1,7 +1,7 @@
 // Mes trades : positions ouvertes (P&L en direct) et historique avec statistiques.
 import { backend } from "../data.js";
 import { prices } from "../market.js";
-import { unrealizedEur } from "../sizing.js";
+import { pnlBreakdown } from "../sizing.js";
 import { STRAT, cls, dt, esc, eur, pct, pq, px, rr } from "../ui.js";
 
 export function stats(list) {
@@ -40,7 +40,7 @@ export function historyTable(list, { who = false } = {}) {
 }
 
 function openCard(t, p) {
-  const u = unrealizedEur(t, p?.last);
+  const b = pnlBreakdown(t, p?.last);
   const dir = t.direction === "LONG" ? "long" : "short";
   return `<a class="ticket ${dir}" href="#/trade/${t.id}" style="grid-template-columns:1fr">
     <div>
@@ -50,9 +50,9 @@ function openCard(t, p) {
       <dl>
         <dt>Entrée</dt><dd class="num">${pq(+t.entry_price, t.quote)}</dd>
         <dt>Prix actuel</dt><dd class="num">${p?.last ? pq(p.last, t.quote) : "indisponible"}</dd>
-        <dt>En cours</dt><dd class="num ${cls(u)}">${p?.last ? eur(u, true) : "—"}</dd>
-        <dt>Déjà encaissé</dt><dd class="num ${cls(+t.realized_pnl_eur)}">${eur(+t.realized_pnl_eur, true)}</dd>
-        <dt>SL / TP</dt><dd class="num">${px(+t.sl)} / ${[t.tp1, t.tp2, t.tp3].map((x, i) => x ? px(+x) + (t[`tp${i + 1}_hit`] ? " ✓" : "") : "—").join(" · ")}</dd>
+        <dt>Si tu fermes maintenant</dt><dd class="num ${cls(b.ifCloseNow)}"><b>${b.ifCloseNow != null ? eur(b.ifCloseNow, true) : "—"}</b>
+          ${b.ifCloseNow != null ? `<br><span class="small muted">prix ${eur(b.move, true)} · frais d'entrée ${eur(-b.entryFee, true)} · frais de sortie ≈ ${eur(-b.exitFee, true)}${Math.abs(b.banked) > 0.005 ? ` · TP encaissés ${eur(b.banked, true)}` : ""}</span>` : ""}</dd>
+        <dt>SL / TP</dt><dd class="num">${+t.sl > 0 ? px(+t.sl) : `aucun${t.liq_price ? ` (liq. ≈ ${px(+t.liq_price)})` : ""}`} / ${[t.tp1, t.tp2, t.tp3].map((x, i) => x ? px(+x) + (t[`tp${i + 1}_hit`] ? " ✓" : "") : "—").join(" · ")}</dd>
       </dl>
       ${t.advice ? `<p class="small" style="margin-top:10px"><b>Conseil du bot :</b> ${esc(t.advice)}</p>` : ""}
     </div></a>`;

@@ -5,7 +5,7 @@ Le site privé de ton club de trading :
 - **le bot** analyse Kraken toutes les heures et publie ses trades 🟢 / 🟡 / 🛑 ;
 - **chaque membre** a son compte et son solde, et enregistre ses trades : ceux du bot, ou les siens (choix de l'entrée, du SL, des TP et du multiplicateur) ;
 - **tout le club** voit l'historique et le classement ;
-- **tout le monde** peut régler le bot et proposer des améliorations ;
+- **chaque membre** peut envoyer ses idées d'amélioration à l'admin (seul l'admin règle le bot) ;
 - **ça marche sur téléphone** : le site s'installe comme une application.
 
 > ⚠️ Le bot cherche les meilleures occasions et calcule le risque, mais **aucun trade n'est garanti**.
@@ -156,9 +156,10 @@ L'icône du loup apparaît sur ton écran, comme une vraie app.
 | **Mes trades** | Tes trades en cours (gain ou perte en direct, conseil du bot), ton historique, tes statistiques. Tu peux encaisser une partie, déplacer le SL ou clôturer |
 | **Trade manuel** | Tu choisis l'actif, le sens, l'entrée, le SL, les TP et le **multiplicateur** : le site calcule la bonne taille |
 | **Le club** | Classement (en R, pour être juste entre petits et gros soldes), trades de tout le monde, page de chaque membre |
-| **Le bot** | Comment il décide, ses résultats historiques, **ses réglages modifiables par tous**, la boîte à idées |
+| **Idées** | Formulaire pour proposer une amélioration : elle arrive directement chez l'admin, qui répond |
+| **Le bot** (admin) | Comment il décide, ses résultats historiques, ses réglages. Lien dans Mon compte, réservé à l'admin |
 | **Apprendre** | Les règles, le lexique, les **graphiques d'exemple** de chaque situation, une calculette de risque |
-| **Mon compte** | Pseudo, **solde modifiable à tout moment**, risque par trade, historique du solde. Pour l'admin : approbation des membres |
+| **Mon compte** | Pseudo, **solde modifiable à tout moment**, risque par trade, garde-fous, historique du solde. Pour l'admin : idées reçues, réglages du bot, approbation des membres |
 
 **Paires en dollars.** Le bot ne propose que des paires cotées en **USD** (BTC/USD, ETH/USD, xStocks…), comme sur ton compte.
 Ton solde et ton risque restent en **euros** : le site convertit avec le taux EUR/USD de Kraken du moment.
