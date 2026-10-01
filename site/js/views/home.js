@@ -1,6 +1,8 @@
 // Accueil : le verdict du dernier scan, les signaux, le risque disponible, les news.
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
+import { goLive } from "../live.js";
+import { setupCard } from "../setup.js";
 import { riskBudget } from "../sizing.js";
 import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast } from "../ui.js";
 
@@ -74,14 +76,16 @@ export async function render(main, ctx) {
       ${open.length ? `<a class="btn discret" href="#/trades">${open.length} trade${open.length > 1 ? "s" : ""} en cours</a>` : ""}
     </div>
 
-    ${trades.length ? `<section class="section"><h2>Trades validés</h2><div class="grille">${trades.map((s) => ticket(s, me)).join("")}</div></section>` : ""}
+    ${trades.length ? `<section class="section"><h2>Trades validés</h2>
+      <p class="muted">Le bot a vu la confirmation. Le feu de chaque carte te dit si le prix est encore au bon endroit.</p>
+      <div class="grille setups">${trades.map((s) => setupCard(s, me)).join("")}</div></section>` : ""}
 
     ${scan && !trades.length && (scan.reasons || []).length ? `<section class="section"><h2>Pourquoi pas de trade</h2>
       <div class="bloc"><ul>${scan.reasons.slice(0, 5).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div></section>` : ""}
 
     ${watch.length ? `<section class="section"><h2>À surveiller</h2>
-      <p class="muted">Pas d'entrée pour l'instant : le bot attend la condition indiquée.</p>
-      <div class="grille">${watch.map((s) => ticket(s, me)).join("")}</div></section>` : ""}
+      <p class="muted">Pas encore d'entrée : le bot attend une confirmation. Le feu passe au vert quand la condition est remplie.</p>
+      <div class="grille setups">${watch.map((s) => setupCard(s, me)).join("")}</div></section>` : ""}
 
     ${scan?.opportunities?.length ? `<section class="section"><h2>Tous les marchés analysés</h2>
       <div class="ligne">${scan.opportunities.slice(0, 40).map((o) => {
@@ -98,6 +102,13 @@ export async function render(main, ctx) {
     ${scan?.data_issues?.length ? `<section class="section"><details><summary>Problèmes de données au dernier scan (${scan.data_issues.length})</summary>
       <ul>${scan.data_issues.slice(0, 12).map((d) => `<li class="small">${esc(d)}</li>`).join("")}</ul></details></section>` : ""}
   `;
+
+  const shown = [...trades, ...watch];
+  const stop = goLive(shown.map((s) => {
+    const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
+    return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]") };
+  }));
+  ctx.onLeave(stop);
 
   main.querySelector("#scan-now").addEventListener("click", (e) => busy(e.currentTarget, async () => toast(await backend.requestScan())));
 }

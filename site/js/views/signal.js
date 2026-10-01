@@ -1,8 +1,8 @@
 // Détail d'un signal : graphique, échelle de prix, explications simples, formulaire pour le prendre.
-import { candleChart, levelLines } from "../charts.js";
 import { backend } from "../data.js";
-import { ladder } from "../ladder.js";
-import { eurPerQuote, krakenLink, ohlc, prices } from "../market.js";
+import { goLive } from "../live.js";
+import { LEGENDE, chiffres, idee, planTable } from "../setup.js";
+import { eurPerQuote, krakenLink, prices } from "../market.js";
 import { STRAT, ago, dt, esc, pq, px } from "../ui.js";
 import { tradeForm } from "./tradeform.js";
 
@@ -26,11 +26,20 @@ export async function render(main, ctx, id) {
     <p class="muted">${esc(STRAT[s.strategy] || s.strategy)} · score ${Math.round(s.score)}/100 · détecté ${ago(s.created_at)} (${dt(s.created_at)})
       ${price ? ` · prix actuel <b class="num">${pq(price, s.quote)}</b>` : px0.error ? ` · prix en direct indisponible` : ""}</p>
 
-    <div class="split">
-      <figure><div class="graph" id="chart"></div>
-        <figcaption>Bougies de 15 minutes. Jaune = zone d'entrée, rouge = stop, vert = objectifs.</figcaption></figure>
-      <div class="bloc">${ladder({ direction: s.direction, entryLow: s.entry_low, entryHigh: s.entry_high, sl: s.sl, tps: [s.tp1, s.tp2, s.tp3], price, anim: true })}</div>
-    </div>
+    <p class="setup-idee grand">${idee(s)}</p>
+    <div class="feu" id="phase"><span class="feu-icone">…</span><div><strong>Lecture du prix Kraken…</strong></div></div>
+
+    <figure class="section"><div class="graph setup-graph grand" id="chart"></div>
+      ${LEGENDE}
+      <figcaption class="small muted" id="chart-note">Chargement des bougies Kraken…</figcaption>
+      <p class="small muted">Les pointillés montrent le <b>plan</b> du bot (et ce qui se passe s'il rate), pas une prédiction :
+      le marché peut faire autre chose. C'est le stop qui limite la perte.</p></figure>
+
+    <section class="section grille">
+      <div class="bloc pile"><h2>Ce que tu risques, ce que tu peux gagner</h2>${chiffres(s, ctx.me)}
+        <p class="small muted">Calculé avec ton solde et ton risque par trade (page Mon compte), objectifs encaissés 30 / 40 / 30 %.</p></div>
+      <div class="bloc pile"><h2>Les niveaux</h2>${planTable(s)}</div>
+    </section>
 
     <section class="section grille">
       <div class="bloc pile">
@@ -74,11 +83,8 @@ export async function render(main, ctx, id) {
       </div>
     </section>`;
 
-  const el = main.querySelector("#chart");
-  const draw = (candles) => candleChart(el, candles, { lines: levelLines({ entryLow: s.entry_low, entryHigh: s.entry_high, sl: s.sl, tps: [s.tp1, s.tp2, s.tp3] }) });
-  let chart = draw(s.candles || []);
-  ohlc(s, 15).then((c) => { if (c?.length && el.isConnected) { chart.remove(); chart = draw(c.slice(-160)); } }).catch(() => {});
-  ctx.onLeave(() => chart.remove());
+  ctx.onLeave(goLive([{ s, chartEl: main.querySelector("#chart"), phaseEl: main.querySelector("#phase"), noteEl: main.querySelector("#chart-note") }],
+    { interactive: true, bars: 160 }));
 
   const inst = { instrument_key: s.instrument_key, display: s.display, venue: s.venue, api_symbol: s.api_symbol,
     api_asset_class: s.api_asset_class, asset_class: s.asset_class, quote: s.quote, can_short: true, max_leverage: 10 };

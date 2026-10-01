@@ -96,17 +96,36 @@ class Supabase:
     def select(self, table: str, params: dict | None = None) -> list[dict]:
         return self._send("GET", f"{self.base}/{table}", params={"select": "*", **(params or {})}) or []
 
+    @staticmethod
+    def _columns(rows: list[dict] | dict) -> dict:
+        """PostgREST refuse un envoi groupé dont les objets n'ont pas tous les mêmes clés (PGRST102).
+        Avec ?columns=… + « missing=default », une clé absente prend la valeur par défaut de la colonne."""
+        if not isinstance(rows, list) or len({frozenset(r) for r in rows}) <= 1:
+            return {}
+        cols: list[str] = []
+        for r in rows:
+            cols += [k for k in r if k not in cols]
+        return {"columns": ",".join(f'"{c}"' if not c.isidentifier() else c for c in cols)}
+
     def insert(self, table: str, rows: list[dict] | dict, returning: bool = True) -> list[dict]:
-        headers = {"Prefer": "return=representation" if returning else "return=minimal"}
-        return self._send("POST", f"{self.base}/{table}", content=dumps(rows), headers=headers) or []
+        if isinstance(rows, list) and not rows:
+            return []
+        prefer = "return=representation" if returning else "return=minimal"
+        params = self._columns(rows)
+        if params:
+            prefer += ",missing=default"
+        return self._send("POST", f"{self.base}/{table}", params=params, content=dumps(rows),
+                          headers={"Prefer": prefer}) or []
 
     def upsert(self, table: str, rows: list[dict], on_conflict: str) -> None:
         if not rows:
             return
-        headers = {"Prefer": "resolution=merge-duplicates,return=minimal"}
         for i in range(0, len(rows), 500):
-            self._send("POST", f"{self.base}/{table}", params={"on_conflict": on_conflict},
-                       content=dumps(rows[i:i + 500]), headers=headers)
+            chunk = rows[i:i + 500]
+            cols = self._columns(chunk)
+            prefer = "resolution=merge-duplicates,return=minimal" + (",missing=default" if cols else "")
+            self._send("POST", f"{self.base}/{table}", params={"on_conflict": on_conflict, **cols},
+                       content=dumps(chunk), headers={"Prefer": prefer})
 
     def update(self, table: str, filters: dict, data: dict) -> None:
         self._send("PATCH", f"{self.base}/{table}", params=filters, content=dumps(data),

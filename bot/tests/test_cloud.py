@@ -22,7 +22,7 @@ class FakePostgrest:
 
     def _match(self, row, params):
         for k, v in params.items():
-            if k in ("select", "on_conflict"):
+            if k in ("select", "on_conflict", "columns"):
                 continue
             op, _, val = v.partition(".")
             cur = row.get(k)
@@ -41,6 +41,10 @@ class FakePostgrest:
         if req.method == "POST":
             data = json.loads(req.content)
             data = data if isinstance(data, list) else [data]
+            # Comme le vrai PostgREST : un envoi groupé dont les objets n'ont pas les mêmes clés est refusé
+            # (PGRST102), sauf si le paramètre ?columns= est fourni (les clés absentes prennent la valeur par défaut).
+            if len({frozenset(d) for d in data}) > 1 and "columns" not in params:
+                return httpx.Response(400, json={"code": "PGRST102", "message": "All object keys must match"})
             out = []
             for d in data:
                 if "on_conflict" in params:
@@ -191,3 +195,20 @@ def test_erreur_supabase_expliquee(status, body, mot, monkeypatch, capsys):
     monkeypatch.setattr(cloud, "_main", lambda cmd: sb.insert("scans", {}))
     assert cloud.main(["scan"]) == 1
     assert "🛑 ERREUR SUPABASE" in capsys.readouterr().out
+
+
+def test_envoi_groupe_cles_differentes_signaux_trade_et_watch():
+    """Régression : signaux 🟢 (plus de champs) + 🟡 dans le même envoi → ?columns + missing=default."""
+    pg = FakePostgrest()
+    seen = {}
+
+    def h(req):
+        seen["params"], seen["prefer"] = dict(req.url.params), req.headers.get("prefer", "")
+        return pg.handler(req)
+    sb = Supabase("https://x.supabase.co", "sb_secret_x", transport=httpx.MockTransport(h))
+    sb.insert("signals", [{"status": "TRADE", "score": 80, "sources": []}, {"status": "WATCH", "score": 70}], returning=False)
+    assert len(pg.tables["signals"]) == 2
+    assert set(seen["params"]["columns"].split(",")) == {"status", "score", "sources"}
+    assert "missing=default" in seen["prefer"]
+    sb.insert("scans", [{"a": 1}, {"a": 2}])           # mêmes clés : pas de paramètre columns
+    assert "columns" not in seen["params"]

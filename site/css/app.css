@@ -260,3 +260,70 @@ dialog::backdrop { background: rgba(6, 12, 22, .7); }
 .auth .logo-grand { width: 96px; height: 96px; display: block; margin: 0 auto 12px; }
 .auth h1 { text-align: center; }
 .auth .sous { text-align: center; color: var(--brume); margin: 0 auto 24px; }
+
+/* ---------- Cartes « setup » (accueil + page signal) : graphique en direct + feu + chiffres ---------- */
+.grille.setups { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.setup {
+  display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden;
+  background: var(--houle); border: 1px solid var(--ligne); border-radius: var(--r-ticket); padding: 18px 18px 18px 24px;
+}
+.setup::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--ligne); }
+.setup.long::before { background: var(--long); }
+.setup.short::before { background: var(--short); }
+.setup.watch { border-style: dashed; }
+.setup-tete { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.setup-nom { flex: 1 1 auto; min-width: 0; }
+.setup-nom h3 { margin: 0; font: 800 1.25rem/1.1 var(--titre); }
+.sens-badge {
+  font: 800 .95rem/1 var(--titre); padding: 8px 10px; border-radius: 10px; white-space: nowrap;
+  background: var(--houle-2); color: var(--ecume);
+}
+.setup.long .sens-badge, .sens-badge.long { background: var(--long-fond); color: var(--long); }
+.setup.short .sens-badge, .sens-badge.short { background: var(--short-fond); color: var(--short); }
+.setup-idee { margin: 0; line-height: 1.5; }
+.setup-idee.grand { font-size: 1.1rem; margin-top: 12px; }
+
+.feu {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-bloc);
+  background: var(--houle-2); border: 1px solid var(--ligne); min-height: 64px;
+}
+.feu p { margin: 2px 0 0; color: var(--brume); font-size: .93rem; }
+.feu strong { font-size: 1.02rem; }
+.feu-icone { font-size: 1.5rem; line-height: 1.2; }
+.feu.long { background: var(--long-fond); border-color: rgba(61, 220, 151, .45); }
+.feu.long strong { color: var(--long); }
+.feu.short { background: var(--short-fond); border-color: rgba(255, 107, 107, .45); }
+.feu.short strong { color: var(--short); }
+.feu.ambre { background: var(--ambre-fond); border-color: rgba(242, 181, 68, .45); }
+.feu.ambre strong { color: var(--ambre); }
+
+.setup-graph { height: 220px; width: 100%; border-radius: 10px; overflow: hidden; background: var(--houle); }
+.setup-graph.grand { height: min(420px, 60vh); }
+figure.section { margin: 16px 0 0; }
+
+.legende { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; color: var(--brume); }
+.legende span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legende i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
+.legende .k-zone { border-color: var(--ambre); border-top-style: dashed; }
+.legende .k-stop { border-color: var(--short); }
+.legende .k-obj { border-color: var(--long); border-top-width: 2px; }
+.legende .k-ok { border-color: var(--long); border-top-style: dotted; }
+.legende .k-rate { border-color: var(--short); border-top-style: dotted; }
+
+.setup-chiffres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.setup-chiffres > div { background: var(--abysse); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; }
+.setup-chiffres dt { color: var(--brume); font-size: .8rem; }
+.setup-chiffres dd { margin: 0; font: 800 1.15rem var(--titre); }
+.setup-chiffres .small { font-size: .72rem; line-height: 1.25; }
+
+.plan summary { cursor: pointer; color: var(--brume); font-weight: 700; }
+.plan-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: .93rem; }
+.plan-table th { text-align: left; font-weight: 700; color: var(--brume); padding: 4px 8px 4px 0; white-space: nowrap; }
+.plan-table td { padding: 4px 0; white-space: normal; overflow-wrap: anywhere; }
+.plan-table th { width: 7.5em; vertical-align: top; }
+.btn.pleine { width: 100%; justify-content: center; text-align: center; }
+@media (max-width: 420px) {
+  .setup { padding: 14px 14px 14px 18px; }
+  .setup-chiffres dd { font-size: 1rem; }
+  .setup-graph { height: 200px; }
+}
