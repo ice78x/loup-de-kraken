@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Le Loup de Kraken">
+  <!-- Tête de loup stylisée ; le menton se termine en tentacules (le kraken). Dessin original. -->
+  <path d="M32 50 L15 36 L11 9 L23 19 L32 16 L41 19 L53 9 L49 36 Z" fill="#1B3050" stroke="#9DB4C8" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M15 36 L23 19 L27 31 Z M49 36 L41 19 L37 31 Z" fill="#14243A"/>
+  <path d="M26 30 L30.5 32.5 L26 34 Z" fill="#F2B544"/>
+  <path d="M38 30 L33.5 32.5 L38 34 Z" fill="#F2B544"/>
+  <path d="M28.5 41 L32 46 L35.5 41 Z" fill="#0E1A2B"/>
+  <g fill="none" stroke="#F2B544" stroke-width="2.2" stroke-linecap="round">
+    <path d="M26 46 C22 51 20 55 14 56"/>
+    <path d="M32 50 C32 55 29 59 25 60"/>
+    <path d="M38 46 C42 51 44 55 50 56"/>
+  </g>
+</svg>

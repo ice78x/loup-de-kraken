@@ -1,0 +1,46 @@
+# CLAUDE.md — Le Loup de Kraken
+
+Site privé d'un club de trading entre amis (francophone, débutants) + bot d'analyse Kraken.
+Réponds et écris l'interface **en français simple**. Les utilisateurs sont novices (dont une personne avec un TDAH) :
+sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqué.
+
+## Architecture (coût 0 €)
+- `site/` : site statique servi par Netlify, **sans étape de build**. HTML + CSS + modules JavaScript natifs.
+  - `js/app.js` routeur (hash `#/...`), `js/views/*.js` une page par fichier (`export async function render(main, ctx, ...params)`).
+  - `js/data.js` : TOUT accès aux données passe par ici (Supabase, ou `demo.js` si `config.js` est vide).
+  - `js/sizing.js` : calcul de position (miroir de `bot/src/kraken_assistant/risk/position_sizing.py`). Toute modification = mettre à jour les deux + tests.
+  - `vendor/` : bibliothèques intégrées (supabase-js, lightweight-charts v5). Ne pas ajouter de CDN pour le JS.
+  - `css/app.css` : jetons de design dans `:root` (bleu abyssal + ambre ; vert/rouge réservés gains/pertes et LONG/SHORT).
+- `netlify/functions/` : `market.mjs` (proxy des prix publics Kraken), `scan.mjs` (déclenche le workflow GitHub `scan`).
+- `supabase/schema.sql` : schéma + RLS. **Idempotent** (relançable) : utiliser `create ... if not exists`, `alter table ... add column if not exists`,
+  `create or replace`. Les politiques RLS sont recréées à chaque exécution.
+- `bot/` : bot Python (scanner, stratégies, risque, backtest/optimiseur). `bot/src/kraken_assistant/cloud/run.py` = point d'entrée GitHub Actions
+  (scan → table `scans`/`signals`, suivi des `trades` membres, réglages lus dans `bot_settings`).
+- `.github/workflows/` : `scan.yml` (horaire), `optimize.yml` (dimanche), `tests.yml` (à chaque push).
+
+## Règles NON négociables
+1. **Ne jamais inventer** un prix, une news, un volume, une disponibilité Kraken, une position ou un résultat. Donnée absente → le dire
+   (« DATA INSUFFISANTE — PAS DE TRADE »). Les données fictives n'existent que dans `site/js/demo.js`, `site/js/examples.js` (étiquetées) et les tests.
+2. **Aucun ordre réel** envoyé depuis le site ou le cloud. Pas de clé API Kraken stockée côté serveur. (`live_trading` forcé à false dans `cloud/run.py`.)
+3. **Risque** : taille = risque € / (|entrée − SL| + frais). Le multiplicateur (levier) est choisi APRÈS et ne change jamais la perte au SL.
+   1 % par trade (max 2 %), 2 % de risque ouvert cumulé, stop des nouveaux trades à −3 % sur la journée.
+4. Jamais « trade sûr », « gain garanti », « aucun risque », « machine à cash ».
+5. La clé Supabase secrète (`sb_secret_…`, ou l'ancienne `service_role`) ne va **que** dans les secrets GitHub. Le site n'utilise que la clé publique
+   (`sb_publishable_…` / `anon`) + RLS. Les clés `sb_` ne sont pas des JWT : jamais dans `Authorization: Bearer` (voir `cloud/supabase_rest.py`).
+6. Tout nouveau réglage modifiable depuis le site : ajouter la ligne dans `bot_settings` (schema.sql, avec min/max)
+   ET dans `EDITABLE` de `bot/src/kraken_assistant/cloud/run.py` (bornes revérifiées).
+
+## Ajouter…
+- **une page** : `site/js/views/xxx.js` + route dans `ROUTES` (et `NAV` si besoin) dans `site/js/app.js` + fonctions dans `data.js` (et `demo.js`).
+- **une stratégie** : `bot/src/kraken_assistant/strategies/xxx.py` (`NAME`, `find(a, s) -> list[Setup]`, utiliser `score_setup` et `finalize`),
+  l'enregistrer dans `strategies/__init__.py`, ajouter son libellé dans `STRAT` (`site/js/ui.js`) et des tests dans `bot/tests/`.
+- **une colonne/table** : `supabase/schema.sql` (idempotent + RLS) → l'utilisateur doit recoller le fichier dans le SQL Editor de Supabase.
+
+## Tester (obligatoire avant de proposer un changement)
+```bash
+cd bot && pip install -e ".[dev]" && pytest -q                      # bot (≈ 1 min)
+node --test site/js/tests/*.test.mjs netlify/tests/*.test.mjs        # calculs du site + fonctions Netlify
+npm install --no-save @electric-sql/pglite && node supabase/test_schema.mjs   # schéma + sécurité RLS
+cd site && python3 -m http.server 8080                               # aperçu en mode démo : http://localhost:8080
+```
+Vérifier aussi l'affichage mobile (390 px de large) : pas de défilement horizontal, barre d'onglets en bas.

@@ -1,0 +1,20 @@
+# Secrets — ne jamais committer
+.env
+.env.*
+!.env.example
+
+# Données locales
+data/*.db
+data/*.db-*
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/

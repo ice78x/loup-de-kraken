@@ -1,0 +1,28 @@
+# Vérifie automatiquement que les modifications du bot ne cassent rien (à chaque envoi de code sur GitHub).
+name: tests
+
+on:
+  push:
+    paths: ["bot/**", "site/js/**", "supabase/**", "netlify/**", ".github/workflows/tests.yml"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bot/pyproject.toml
+      - run: pip install -e "bot[dev]"
+      - run: pytest -q
+        working-directory: bot
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test site/js/tests/*.test.mjs netlify/tests/*.test.mjs
+      - run: npm install --no-save @electric-sql/pglite && node supabase/test_schema.mjs

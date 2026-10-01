@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kraken Assistant</title>
+<style>
+:root{--bg:#f6f6f3;--card:#fff;--ink:#16181d;--mute:#6b6f78;--line:#e3e3de;--green:#0f8a4f;--amber:#b7791f;--red:#c2352b;--blue:#2f5fd0;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#111316;--card:#1a1d22;--ink:#e9eaec;--mute:#9aa0aa;--line:#2a2e35;--green:#3fbf7f;--amber:#e0a84a;--red:#ef6b61;--blue:#7ea2ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:18px;margin:0}.badge{font:600 12px var(--mono);padding:4px 8px;border-radius:6px;border:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:6px}
+.big{font:700 26px var(--mono)}.sub{color:var(--mute);font-size:13px}
+section{margin-top:14px}h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:0 0 8px}
+.verdict{font:700 20px system-ui;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+.v-TRADE{border-left:6px solid var(--green)}.v-WATCH{border-left:6px solid var(--amber)}.v-NONE,.v-DATA{border-left:6px solid var(--red)}
+pre{white-space:pre-wrap;word-break:break-word;font:13px/1.5 var(--mono);margin:0}
+.opps{display:flex;flex-wrap:wrap;gap:8px}.opp{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--card);font:13px var(--mono)}
+.LONG{color:var(--green);font-weight:700}.SHORT{color:var(--red);font-weight:700}.SURV{color:var(--amber)}.WAIT{color:var(--mute)}
+.cmds{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+button{font:600 13px system-ui;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 12px;border-radius:8px;cursor:pointer}
+button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:8px}input{flex:1;font:14px var(--mono);padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);min-width:0}
+.news li{margin-bottom:8px}.news small{color:var(--mute)}ul{margin:0;padding-left:18px}
+.warn{color:var(--amber)}
+</style>
+</head>
+<body>
+<main>
+<header><h1>Kraken Assistant</h1><span class="badge" id="mode">…</span></header>
+
+<div class="grid">
+  <div class="card"><div class="label">Capital</div><div class="big" id="capital">—</div><div class="sub" id="capsub"></div></div>
+  <div class="card"><div class="label">Risque disponible</div><div class="big" id="riskav">—</div><div class="sub" id="risksub"></div></div>
+  <div class="card"><div class="label">Positions</div><div id="positions" class="sub">—</div></div>
+  <div class="card"><div class="label">Scan</div><div class="sub">Dernier : <b id="last">—</b><br>Prochain : <b id="next">—</b></div></div>
+</div>
+
+<section><div class="verdict" id="verdict">Aucun scan pour l'instant — clique sur SCAN.</div></section>
+
+<section><h2>Commandes</h2>
+  <div class="cmds">
+    <button class="primary" data-c="SCAN">SCAN</button><button data-c="SCAN URGENT">SCAN URGENT</button>
+    <button data-c="POSITIONS">POSITIONS</button><button data-c="GESTION">GESTION</button>
+    <button data-c="RISQUE">RISQUE</button><button data-c="PORTFOLIO">PORTFOLIO</button>
+    <button data-c="PAPER STATS">PAPER STATS</button><button data-c="NEWS">NEWS</button>
+    <button data-c="STATUS">STATUS</button><button data-c="AIDE">AIDE</button>
+  </div>
+  <div class="row"><input id="cmd" placeholder="ex. PAPER OPEN 12 · CALC 90 1 100 98 · POSITION SET 3 sl=95"><button id="run">OK</button></div>
+</section>
+
+<section id="sigsec" hidden><h2>Signaux</h2><div id="signals" class="grid"></div></section>
+
+<section><h2>Résultat</h2><div class="card"><pre id="out">—</pre></div></section>
+
+<section><h2>Opportunités</h2><div class="opps" id="opps"><span class="sub">—</span></div></section>
+
+<section><h2>News importantes</h2><div class="card"><ul class="news" id="news"><li class="sub">—</li></ul></div></section>
+
+<section id="issec" hidden><h2>Données</h2><div class="card"><ul id="issues" class="warn"></ul></div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const eur=x=>x==null?'—':x.toFixed(2).replace('.',',')+' €';
+const hm=s=>s?new Date(s).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function refresh(){
+  try{
+    const d=await (await fetch('/api/dashboard')).json();
+    $('mode').textContent=d.mode;
+    $('capital').textContent=eur(d.capital.risk_capital_eur);
+    $('capsub').textContent=d.capital.mode+(d.capital.kraken_equity_eur!=null?' · Kraken '+eur(d.capital.kraken_equity_eur):'');
+    if(d.risk){$('riskav').textContent=eur(d.risk.available_eur);
+      $('risksub').innerHTML=`Ouvert ${eur(d.risk.open_eur)} · Jour ${eur(d.risk.today_eur)}`+(d.risk.daily_limit_hit?' · <b class="SHORT">STOP JOUR</b>':'');}
+    $('positions').innerHTML=d.positions.length?d.positions.map(p=>`<div><b class="${p.direction}">${esc(p.display)} ${p.direction}</b> <span class="sub">#${p.id} ${p.source} ${p.status}</span></div>`).join(''):'Aucune';
+    $('last').textContent=hm(d.last_scan);$('next').textContent=hm(d.next_scan);
+    if(d.report_text){const v=$('verdict');v.className='verdict v-'+d.verdict;v.innerHTML='<pre>'+esc(d.report_text.split('\n').slice(0,1).join(''))+'</pre>';
+      if($('out').dataset.auto!=='0') $('out').textContent=d.report_text;}
+    $('sigsec').hidden=!d.signals.length;
+    $('signals').innerHTML=d.signals.map(s=>`<div class="card"><pre>${esc(s.text)}</pre><div style="margin-top:10px"><button onclick="run('PAPER OPEN ${s.id}')">Ouvrir en PAPER</button></div></div>`).join('');
+    $('opps').innerHTML=d.opportunities.length?d.opportunities.map(o=>{const c=o.state.startsWith('SURV')?'SURV':o.state;return `<span class="opp">${esc(o.display)} <span class="${c}">${esc(o.state)}</span>${o.score!=null?' <span class="sub">'+o.score.toFixed(0)+'</span>':''}</span>`}).join(''):'<span class="sub">Lance un scan.</span>';
+    $('news').innerHTML=d.news.length?d.news.map(n=>`<li><b>${esc(n.title)}</b><br><small>${esc(n.source)} · ${hm(n.published)} · impact ${esc(n.impact)} · ${n.verified?'✅ vérifiée':'❔ non vérifiée'}</small><br><small>${esc(n.interpretation)}</small></li>`).join(''):'<li class="sub">Aucune news importante au dernier scan.</li>';
+    $('issec').hidden=!d.data_issues.length;$('issues').innerHTML=d.data_issues.map(x=>`<li>${esc(x)}</li>`).join('');
+  }catch(e){$('mode').textContent='serveur injoignable';}
+}
+async function run(c){
+  document.querySelectorAll('button').forEach(b=>b.disabled=true);
+  $('out').dataset.auto='0';$('out').textContent='⏳ '+c+' … (un scan complet peut prendre 1-3 min)';
+  try{const r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:c})});
+    const raw=await r.text();let txt;try{txt=JSON.parse(raw).text}catch(_){txt='Erreur serveur ('+r.status+') : '+raw.slice(0,300)+'\nRegarde le Terminal ou logs/assistant.log.'}
+    $('out').textContent=txt;}catch(e){$('out').textContent='Erreur : '+e;}
+  document.querySelectorAll('button').forEach(b=>b.disabled=false);refresh();
+}
+document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>run(b.dataset.c));
+$('run').onclick=()=>{const v=$('cmd').value.trim();if(v)run(v)};
+$('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')$('run').click()});
+refresh();setInterval(refresh,60000);
+</script>
+</body>
+</html>

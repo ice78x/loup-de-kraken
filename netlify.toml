@@ -1,0 +1,24 @@
+# Configuration Netlify : pas d'étape de construction, le site est servi tel quel.
+[build]
+  publish = "site"
+  functions = "netlify/functions"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# Toutes les pages de l'application renvoient index.html (navigation côté navigateur)
+[[redirects]]
+  from = "/app/*"
+  to = "/index.html"
+  status = 200

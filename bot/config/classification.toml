@@ -1,0 +1,76 @@
+# Taxonomie utilisée pour CLASSER les instruments découverts dynamiquement.
+# Ce fichier ne dit PAS ce qui est disponible : la disponibilité vient toujours de l'API Kraken.
+# Tu peux l'enrichir librement.
+
+[commodities]
+# Tickers de base considérés comme matières premières (spot tokenisé, xStocks d'ETF matières, perpétuels tradfi)
+bases = ["PAXG", "XAUT", "XAU", "XAG", "GOLD", "SILVER", "WTI", "BRENT", "OIL", "USO", "UKOIL", "USOIL",
+         "NG", "NATGAS", "COPPER", "HG", "XPT", "XPD", "PLATINUM", "PALLADIUM",
+         "GLD", "SLV", "GLDX", "SLVX", "USOX", "IAUX", "PPLTX", "CPERX"]
+
+[exclude]
+# Bases exclues du scan (stablecoins, fiat) — elles restent utilisées pour la conversion de devise.
+bases = ["USDT", "USDC", "DAI", "PYUSD", "USDG", "USDS", "TUSD", "EURT", "EURC", "EURQ", "EURR", "RLUSD",
+         "USDQ", "USDR", "FDUSD", "UST", "USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY",
+         "ZUSD", "ZEUR", "ZGBP", "ZCAD", "ZJPY", "ZAUD"]
+
+[quotes]
+# Devises de cotation acceptées, par ordre de préférence.
+# Par défaut : uniquement les paires contre USD (celles disponibles sur le compte).
+# Pour accepter aussi les paires en euros : ["USD", "EUR"] (ou le réglage QUOTE_CURRENCIES / le site).
+preferred = ["USD"]
+
+[aliases]
+# Noms utilisés dans les news -> ticker de base Kraken (normalisé : XBT -> BTC).
+bitcoin = "BTC"
+btc = "BTC"
+ether = "ETH"
+ethereum = "ETH"
+solana = "SOL"
+ripple = "XRP"
+xrp = "XRP"
+chainlink = "LINK"
+cardano = "ADA"
+dogecoin = "DOGE"
+polkadot = "DOT"
+avalanche = "AVAX"
+litecoin = "LTC"
+tron = "TRX"
+toncoin = "TON"
+"shiba inu" = "SHIB"
+uniswap = "UNI"
+aave = "AAVE"
+arbitrum = "ARB"
+optimism = "OP"
+polygon = "POL"
+sui = "SUI"
+aptos = "APT"
+near = "NEAR"
+cosmos = "ATOM"
+hyperliquid = "HYPE"
+pepe = "PEPE"
+stellar = "XLM"
+tesla = "TSLA"
+apple = "AAPL"
+nvidia = "NVDA"
+microsoft = "MSFT"
+amazon = "AMZN"
+alphabet = "GOOGL"
+google = "GOOGL"
+meta = "META"
+netflix = "NFLX"
+coinbase = "COIN"
+microstrategy = "MSTR"
+strategy = "MSTR"
+"robinhood" = "HOOD"
+palantir = "PLTR"
+amd = "AMD"
+"s&p 500" = "SPY"
+nasdaq = "QQQ"
+gold = "XAU"
+silver = "XAG"
+"crude oil" = "WTI"
+oil = "WTI"
+brent = "BRENT"
+"natural gas" = "NG"
+copper = "COPPER"
