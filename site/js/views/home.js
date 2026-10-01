@@ -80,6 +80,7 @@ export async function render(main, ctx) {
       <div>
         <h1 id="verdict-titre">${scan ? icon + " " : ""}${esc(titre)}</h1>
         <p id="verdict-sous">${esc(sous)}</p>
+        <div class="ligne" id="bilan"></div>
         <p class="small">${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)}) · ` : ""}prochain vers ${nextScan()}</p>
       </div>
     </section>
@@ -149,17 +150,29 @@ export async function render(main, ctx) {
 
   // Verdict en haut : si les trades validés ont déjà touché leur stop ou un objectif, on le dit (au lieu de « 1 trade validé »).
   const phases = new Map();
+  // Verdict en haut, mis à jour avec les vraies bougies : trades validés encore ouverts, sinon le bilan TP / SL touchés du scan.
+  const titre0 = main.querySelector("#verdict-titre").textContent, sous0 = main.querySelector("#verdict-sous").textContent;
   const majVerdict = () => {
-    if (!trades.length || trades.some((s) => !phases.has(s.id))) return;
-    const actifs = trades.filter((s) => !["stop", "tp", "parti", "expire"].includes(phases.get(s.id).code));
+    const vus = sigs.filter((s) => phases.has(s.id));
+    const code = (s) => phases.get(s.id).code;
+    const tp = vus.filter((s) => ["tp", "parti"].includes(code(s))).length;
+    const sl = vus.filter((s) => code(s) === "stop").length;
+    const enJeu = vus.filter((s) => !["tp", "parti", "stop", "expire"].includes(code(s))).length;
+    const bilan = main.querySelector("#bilan");
+    bilan.innerHTML = vus.length ? `<span class="pastille long">🎯 ${tp} TP touché${tp > 1 ? "s" : ""}</span>
+      <span class="pastille short">❌ ${sl} SL touché${sl > 1 ? "s" : ""}</span>
+      <span class="pastille ambre">⏳ ${enJeu} en jeu</span>${vus.length < sigs.length ? '<span class="small muted">lecture des prix…</span>' : ""}` : "";
     const h1 = main.querySelector("#verdict-titre"), p = main.querySelector("#verdict-sous");
-    if (actifs.length) {
-      h1.textContent = `🟢 ${actifs.length} trade${actifs.length > 1 ? "s" : ""} validé${actifs.length > 1 ? "s" : ""}${actifs.length < trades.length ? " encore ouvert" + (actifs.length > 1 ? "s" : "") : ""}`;
-      return;
+    const ouverts = trades.filter((s) => phases.has(s.id) && !["stop", "tp", "parti", "expire"].includes(code(s)));
+    if (ouverts.length) {
+      h1.textContent = `🟢 ${ouverts.length} trade${ouverts.length > 1 ? "s" : ""} validé${ouverts.length > 1 ? "s" : ""}`;
+      p.textContent = sous0;
+    } else if (tp || sl) {
+      h1.textContent = [tp ? `🎯 ${tp} TP touché${tp > 1 ? "s" : ""}` : "", sl ? `❌ ${sl} SL touché${sl > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
+      p.textContent = `Sur les ${sigs.length} setup${sigs.length > 1 ? "s" : ""} du dernier scan. ${enJeu ? `${enJeu} encore en jeu : regarde les cartes ci-dessous.` : "Plus rien en jeu : attends le prochain scan."}`;
+    } else {
+      h1.textContent = titre0; p.textContent = sous0;
     }
-    const fin = (s) => { const ph = phases.get(s.id); return ph.code === "stop" ? `❌ SL touché · ${s.display}` : ph.code === "tp" ? `🎯 TP${ph.tp} touché · ${s.display}` : `${s.display} : ${ph.titre.toLowerCase()}`; };
-    h1.textContent = trades.length === 1 ? fin(trades[0]) : `Les ${trades.length} trades validés sont terminés`;
-    p.textContent = (trades.length > 1 ? trades.map(fin).join(" · ") + ". " : "") + "On n'y entre plus : attends le prochain scan. Si tu es dans le trade, suis-le dans « Mes trades ».";
   };
 
   // Rangement des cartes : par confiance d'abord, puis « imminent » / « fini » dès que le prix Kraken est lu.
@@ -188,8 +201,8 @@ export async function render(main, ctx) {
     main.querySelector("#cartes-attente").remove();
     const stop = goLive(sigs.map((s) => {
       const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
-      // Trades validés : bougies chargées tout de suite (même hors écran) pour savoir si le SL ou un objectif a été touché.
-      return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]"), etatEl: card.querySelector("[data-etat]"), eager: s.status === "TRADE" };
+      // Bougies chargées tout de suite (même hors écran) pour savoir si le SL ou un objectif a déjà été touché (bilan en haut).
+      return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]"), etatEl: card.querySelector("[data-etat]"), eager: true };
     }), { onPhase: ranger, bars: 32 });
     ctx.onLeave(stop);
   }

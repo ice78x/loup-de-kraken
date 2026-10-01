@@ -2,7 +2,7 @@
 import { candleChart } from "../charts.js";
 import { EXAMPLES } from "../examples.js";
 import { ladder } from "../ladder.js";
-import { liqFraction, planTrade } from "../sizing.js";
+import { liqFraction } from "../sizing.js";
 import { krakenFees } from "../fees.js";
 import { esc, eur, num, pct, px } from "../ui.js";
 
@@ -71,35 +71,40 @@ export async function render(main, ctx) {
           (0,40 % / 0,80 %).</p></div>
       </div>
 
-      <h3 class="section">La méthode du club : % de risque d'abord, levier ensuite</h3>
+      <h3 class="section">Passer un ordre, comme sur Kraken Pro</h3>
       <ol class="etapes">
-        <li><b>Repère l'entrée et le stop</b> sur le graphique (le stop = là où ton idée est fausse).</li>
-        <li><b>Risque en €</b> = ton solde × ton % de risque. Ex. 90 € × 1 % = <b>0,90 €</b>.</li>
-        <li><b>Quantité</b> = risque € ÷ (distance entrée → stop + frais). C'est elle qui fixe ta perte au stop.</li>
-        <li><b>Levier ensuite</b> : il ne change que la marge bloquée. Choisis-le pour que la <b>liquidation reste au moins 2× plus loin que le stop</b>
-          (le site te conseille un levier sur chaque trade).</li>
-        <li><b>Sur Kraken Pro</b> : onglet Futures → la paire PF_… → marge <b>isolée</b> + levier → Acheter/Long ou Vendre/Short → ordre <b>Limite</b>
-          → la quantité calculée. Puis ajoute tout de suite un <b>stop</b> et tes <b>take profit</b> en « réduction seule » (ils ne peuvent que fermer, jamais ouvrir).</li>
+        <li>Onglet <b>Futures</b> → la paire <b>PF_…</b> (ex. PF_XBTUSD pour le bitcoin).</li>
+        <li>Choisis la marge <b>isolée</b> et ton <b>levier</b> (avant d'ouvrir : impossible de changer ensuite).</li>
+        <li><b>Acheter / Long</b> si tu penses que ça monte, <b>Vendre / Short</b> si tu penses que ça baisse.</li>
+        <li>Type d'ordre <b>Limite</b> (ton prix, frais 0,02 %) ou <b>Marché</b> (tout de suite, frais 0,05 %).</li>
+        <li>La <b>quantité</b> (en BTC, ETH…) ou le montant : Kraken t'affiche la marge requise.</li>
+        <li>Juste après : un <b>stop</b> et tes <b>take profit</b> en « réduction seule » (ils ne peuvent que fermer ta position).</li>
       </ol>
+      <p>Avant de valider, regarde toujours <b>combien tu perds si le stop est touché</b> et <b>où se trouve la liquidation</b> :
+        c'est exactement ce que montre le simulateur ci-dessous.</p>
 
       <form class="bloc form" id="perp">
-        <h3 style="margin-top:0">Calculette futures perpétuel (règles Kraken)</h3>
+        <h3 style="margin-top:0">Simulateur d'ordre Kraken (futures perpétuel)</h3>
         <div class="choix" role="radiogroup" aria-label="Sens">
-          <label class="long"><input type="radio" name="dir" value="LONG" checked><span>LONG ↑</span></label>
-          <label class="short"><input type="radio" name="dir" value="SHORT"><span>SHORT ↓</span></label>
-        </div>
-        <div class="trois">
-          <label class="champ"><span>Solde (€)</span><input name="bal" inputmode="decimal" value="${(+ctx.me?.balance_eur || 90).toFixed(2)}"></label>
-          <label class="champ"><span>Risque (%)</span><input name="risk" inputmode="decimal" value="${+ctx.me?.risk_pct || 1}"></label>
-          <label class="champ"><span>Levier : <b id="pv">x5</b></span><input type="range" name="lev" min="1" max="10" value="5"></label>
-        </div>
-        <div class="deux">
-          <label class="champ"><span>Entrée ($)</span><input name="entry" inputmode="decimal" value="100"></label>
-          <label class="champ"><span>Stop ($)</span><input name="sl" inputmode="decimal" value="98"></label>
+          <label class="long"><input type="radio" name="dir" value="LONG" checked><span>Acheter / Long ↑</span></label>
+          <label class="short"><input type="radio" name="dir" value="SHORT"><span>Vendre / Short ↓</span></label>
         </div>
         <div class="choix" role="radiogroup" aria-label="Type d'ordre">
           <label><input type="radio" name="ord" value="limit" checked><span>Limite · 0,02 %</span></label>
           <label><input type="radio" name="ord" value="market"><span>Marché · 0,05 %</span></label>
+        </div>
+        <div class="deux">
+          <label class="champ"><span>Prix ($)</span><input name="entry" inputmode="decimal" value="100"></label>
+          <label class="champ"><span>Ton solde (€)</span><input name="bal" inputmode="decimal" value="${(+ctx.me?.balance_eur || 90).toFixed(2)}"></label>
+        </div>
+        <div class="deux">
+          <label class="champ"><span>Quantité</span><input name="qty" inputmode="decimal" value="1"></label>
+          <label class="champ"><span>ou montant ($)</span><input name="amount" inputmode="decimal" value="100"><small>= quantité × prix</small></label>
+        </div>
+        <label class="champ"><span>Levier : <b id="pv">x5</b></span><input type="range" name="lev" min="1" max="10" value="5"></label>
+        <div class="deux">
+          <label class="champ"><span>Stop ($) — facultatif</span><input name="sl" inputmode="decimal" value="98" placeholder="aucun"></label>
+          <label class="champ"><span>Take profit ($) — facultatif</span><input name="tp" inputmode="decimal" value="104" placeholder="aucun"></label>
         </div>
         <div id="perp-out" aria-live="polite"></div>
         <p class="small muted">Taux EUR/USD pris à 1 pour l'exemple. Le funding (toutes les heures) n'est pas compté. La liquidation est approximative :
@@ -151,39 +156,62 @@ export async function render(main, ctx) {
   show(0);
   ctx.onLeave(() => chart?.remove());
 
-  // Calculette « futures perpétuel » : taille par le % de risque, puis levier → marge, maintenance, liquidation (règles Kraken).
+  // Simulateur « comme Kraken » : quantité + levier → valeur, marge isolée, frais, liquidation, résultat au stop / au TP.
   const f = main.querySelector("#perp");
   const fees = krakenFees({ venue: "futures" });
+  let dernier = "qty";
   const calc = () => {
     const v = (n) => num(f.elements[n].value);
     const lev = +f.elements.lev.value;
     f.querySelector("#pv").textContent = "x" + lev;
-    const dir = f.elements.dir.value, entry = v("entry"), sl = v("sl"), bal = v("bal");
-    const limit = f.elements.ord.value === "limit";
-    const p = planTrade({ balance: bal, riskPct: v("risk"), entry, sl, tps: [], direction: dir, leverage: lev, venue: "futures", maxLev: 10,
-      feeTaker: fees.taker, feeMaker: fees.maker, entryIsMaker: limit, eurPerQuote: 1, lotDecimals: 6, strict: false });
+    const dir = f.elements.dir.value, L = dir === "LONG", entry = v("entry"), bal = v("bal");
+    if (entry > 0) {
+      if (dernier === "qty") f.elements.amount.value = v("qty") > 0 ? +(v("qty") * entry).toPrecision(8) : "";
+      else f.elements.qty.value = v("amount") > 0 ? +(v("amount") / entry).toPrecision(8) : "";
+    }
+    const qty = v("qty"), sl = v("sl"), tp = v("tp");
     const out = f.querySelector("#perp-out");
-    if (!p.qty) { out.innerHTML = `<p class="alerte rouge">${esc(p.errors.join(" "))}</p>`; return; }
+    if (!(entry > 0) || !(qty > 0)) { out.innerHTML = '<p class="muted">Indique un prix et une quantité.</p>'; return; }
+    const fe = (f.elements.ord.value === "limit" ? fees.maker : fees.taker) / 100, ft = fees.taker / 100, fm = fees.maker / 100;
+    const valeur = qty * entry, mise = valeur / lev, fraisEntree = valeur * fe;
     const d = liqFraction(lev, "futures", 10);
-    const liq = dir === "LONG" ? entry * (1 - d) : entry * (1 + d);
-    const maint = p.notionalEur * 0.05;
+    const liq = L ? entry * (1 - d) : entry * (1 + d);
+    const res = (prix, fSortie) => (L ? prix - entry : entry - prix) * qty - fraisEntree - prix * qty * fSortie;
+    const liqAvant = sl > 0 && (L ? sl <= liq : sl >= liq);
+    const auStop = sl > 0 ? (liqAvant ? -(mise + fraisEntree) : res(sl, ft)) : null;
+    const auTp = tp > 0 ? res(tp, fm) : null;
+    const pcm = (x) => pct((x / mise) * 100, 1), pcs = (x) => (bal > 0 ? pct((x / bal) * 100, 2) : "—");
+    const sens = (x) => (x == null ? "" : x >= 0 ? "gain" : "perte");
+    const bouge = [-10, -5, -2, 2, 5, 10];
     out.innerHTML = `
       <dl class="chiffres">
-        <div><dt>Perte si stop touché</dt><dd class="num perte">${eur(-p.lossAtSlEur)}</dd><span class="small muted">${pct(p.effectiveRiskPct, 2)} du solde, frais compris</span></div>
-        <div><dt>Quantité</dt><dd class="num">${+p.qty.toPrecision(6)}</dd><span class="small muted">unités de l'actif</span></div>
-        <div><dt>Valeur de la position</dt><dd class="num">${eur(p.notionalEur)}</dd></div>
-        <div><dt>Ta mise (marge isolée x${lev})</dt><dd class="num">${eur(p.marginEur)}</dd><span class="small muted">${pct((p.marginEur / bal) * 100, 1)} du solde</span></div>
-        <div><dt>Marge de maintenance</dt><dd class="num">${eur(maint)}</dd><span class="small muted">5 % de la position</span></div>
-        <div><dt>Liquidation ≈</dt><dd class="num perte">${px(liq)} $</dd><span class="small muted">${pct(d * 100, 1)} de mouvement · stop à ${pct(p.slPct, 2)}</span></div>
-        <div><dt>Frais (entrée + sortie au stop)</dt><dd class="num">${eur(-(p.notionalEur * ((limit ? fees.maker : fees.taker) + fees.taker)) / 100)}</dd></div>
+        <div><dt>Valeur de la position</dt><dd class="num">${eur(valeur)}</dd></div>
+        <div><dt>Ta mise (marge isolée x${lev})</dt><dd class="num">${eur(mise)}</dd><span class="small muted">${pcs(mise)} de ton solde</span></div>
+        <div><dt>Frais d'entrée</dt><dd class="num">${eur(-fraisEntree)}</dd></div>
+        <div><dt>Liquidation ≈</dt><dd class="num perte">${px(liq)} $</dd><span class="small muted">à ${pct(d * 100, 1)} de mouvement · tu perds ta mise</span></div>
+        <div><dt>Si le stop est touché</dt><dd class="num ${sens(auStop)}">${auStop == null ? "pas de stop" : eur(auStop, true)}</dd>
+          <span class="small muted">${auStop == null ? `sans stop : jusqu'à ${eur(-(mise + fraisEntree))} (liquidation)` : `${pcm(auStop)} de ta mise · ${pcs(auStop)} du solde${liqAvant ? " · ⚠ liquidé avant" : ""}`}</span></div>
+        <div><dt>Si le take profit est touché</dt><dd class="num ${sens(auTp)}">${auTp == null ? "—" : eur(auTp, true)}</dd>
+          ${auTp == null ? "" : `<span class="small muted">${pcm(auTp)} de ta mise · ${pcs(auTp)} du solde</span>`}</div>
       </dl>
-      ${d * 100 < 2 * p.slPct ? `<p class="alerte rouge">⚠️ À x${lev}, la liquidation (${pct(d * 100, 1)}) est trop près du stop (${pct(p.slPct, 2)}) : baisse le levier.</p>`
-        : `<p class="alerte verte">✅ La liquidation est ${((d * 100) / p.slPct).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}× plus loin que le stop : ta perte réelle sera celle du stop.</p>`}
-      ${p.marginEur > bal ? '<p class="alerte rouge">Ta mise dépasse ton solde : monte le levier (ta perte au stop ne change pas).</p>' : ""}
-      <p class="small">Change le levier : la <b>quantité</b> et la <b>perte au stop</b> ne bougent pas, seules ta <b>mise</b> et la <b>liquidation</b> changent.
-        C'est ça, utiliser le levier sans augmenter son risque.</p>`;
+      ${mise > bal ? '<p class="alerte rouge">Ta mise dépasse ton solde : Kraken refuserait l\'ordre. Baisse la quantité ou monte le levier.</p>' : ""}
+      ${sl > 0 && !liqAvant && d < (Math.abs(entry - sl) / entry) * 2 ? `<p class="alerte">⚠ La liquidation est proche de ton stop : baisse le levier pour garder de la marge.</p>` : ""}
+      ${liqAvant ? '<p class="alerte rouge">⚠ La liquidation arrive AVANT ton stop : tu perdrais toute ta mise. Baisse le levier ou rapproche le stop.</p>' : ""}
+      <div class="table-wrap"><table><thead><tr><th>Si le prix bouge de</th><th class="d">Résultat</th><th class="d">% mise</th></tr></thead><tbody>
+        ${bouge.map((m) => {
+          const prix = entry * (1 + m / 100);
+          const liquide = L ? prix <= liq : prix >= liq;
+          const r = liquide ? -(mise + fraisEntree) : res(prix, ft);
+          return `<tr><td>${m > 0 ? "+" : ""}${m} %</td><td class="d num ${sens(r)}">${liquide ? "liquidé " : ""}${eur(r, true)}</td><td class="d num ${sens(r)}">${pcm(r)}</td></tr>`;
+        }).join("")}</tbody></table></div>
+      <p class="small">Même quantité, levier différent : le résultat en € ne change pas, mais ta mise et la liquidation, si.
+        Même mise, plus de levier : position plus grosse, gains <b>et</b> pertes multipliés.</p>`;
   };
-  f.addEventListener("input", calc);
+  f.addEventListener("input", (e) => {
+    if (e.target.name === "qty") dernier = "qty";
+    if (e.target.name === "amount") dernier = "amount";
+    calc();
+  });
   f.addEventListener("change", calc);
   calc();
 }
