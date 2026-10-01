@@ -57,7 +57,7 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   if (waitingSide) {
     const target = L ? hi : lo;
     const verbe = L ? "redescendre" : "remonter";
-    return { code: "attendre", ton: "ambre", icone: "⏳", titre: watch ? "Attendre" : "Attendre le retour",
+    return { code: "attendre", ton: "ambre", icone: "⏳", titre: watch ? "Attendre" : "Attendre le retour", dist: dist(target),
       texte: `Le prix doit encore ${verbe} de ${pct(dist(target), 2)} pour revenir dans la zone jaune. ${watch ? "" : "N'entre pas plus loin : tu risquerais plus pour gagner moins."}`.trim() };
   }
   return { code: "prudence", ton: "short", icone: "⚠️", titre: "Prudence",
@@ -99,6 +99,34 @@ export function gains(s, me) {
   const r = (net ? s.rr_net : s.rr || []).map(Number);
   if (r.length < 3 || r.some((x) => !isFinite(x))) return { risk, tp1: null, all: null, net };
   return { risk, tp1: risk * r[0] * 0.3, all: risk * (0.3 * r[0] + 0.4 * r[1] + 0.3 * r[2]), net, r };
+}
+
+/** Score à partir duquel un setup est classé « plus solide » (confiance du bot, 0–100). */
+export const SEUIL_SOLIDE = 75;
+/** Prix à moins de ce pourcentage de la zone = imminent. */
+export const PROCHE_PCT = 0.5;
+
+/**
+ * Dans quel espace de l'accueil ranger la carte ?
+ * imminent : à ouvrir maintenant / très bientôt · solide / fragile : selon la confiance du bot · fini : raté, trop tard, expiré.
+ * ph = résultat de phase() (null tant que le prix n'est pas lu).
+ */
+export function espace(s, ph) {
+  if (ph && ["stop", "parti", "expire"].includes(ph.code)) return "fini";
+  if (ph && (["go", "condition", "zone"].includes(ph.code) || (ph.code === "attendre" && ph.dist != null && ph.dist <= PROCHE_PCT))) return "imminent";
+  return +s.score >= SEUIL_SOLIDE ? "solide" : "fragile";
+}
+
+/** Ordre dans un espace : validés avant « à surveiller », puis confiance décroissante. */
+export const ordre = (a, b) => (a.status === "TRADE" ? 0 : 1) - (b.status === "TRADE" ? 0 : 1) || +b.score - +a.score;
+
+export function confiance(s) {
+  const v = Math.max(0, Math.min(100, Math.round(+s.score || 0)));
+  const mot = v >= 85 ? "très forte" : v >= SEUIL_SOLIDE ? "forte" : v >= 65 ? "moyenne" : "faible";
+  return `<div class="confiance" title="Confiance du bot : plus le score est haut, plus il y a de signaux d'accord. Ce n'est jamais une garantie.">
+    <span class="small muted">Confiance du bot</span>
+    <span class="jauge"><i style="width:${v}%"></i></span>
+    <b class="small">${v}/100 · ${mot}</b></div>`;
 }
 
 export function idee(s) {
@@ -153,6 +181,7 @@ export function setupCard(s, me) {
         <span class="small muted">${esc(CLASSE[s.asset_class] || "")} · détecté ${ago(s.created_at)}</span></div>
       ${watch ? '<span class="pastille ambre">🟡 à surveiller</span>' : expired ? '<span class="pastille">expiré</span>' : '<span class="pastille long">🟢 validé</span>'}
     </header>
+    ${confiance(s)}
     <p class="setup-idee">${idee(s)}</p>
     <div class="feu" data-phase><span class="feu-icone">…</span><div><strong>Lecture du prix Kraken…</strong></div></div>
     <div class="setup-graph" data-chart aria-label="Graphique 15 minutes de ${esc(s.display)} avec le plan du bot"></div>
@@ -160,7 +189,7 @@ export function setupCard(s, me) {
     ${chiffres(s, me)}
     <details class="plan"><summary>Le plan en détail</summary>${planTable(s)}
       ${watch && s.trigger_text ? `<p class="small"><b>Condition attendue :</b> ${esc(s.trigger_text)}</p>` : ""}
-      <p class="small muted">Stratégie : ${esc(STRAT[s.strategy] || s.strategy)} · score ${Math.round(s.score)}/100.
+      <p class="small muted">Stratégie : ${esc(STRAT[s.strategy] || s.strategy)}.
       Le tracé pointillé montre le plan du bot, pas une prédiction : le marché peut faire autre chose.</p></details>
     <a class="btn ${watch ? "" : "principal"} pleine" href="#/signal/${esc(s.id)}">${watch ? "Préparer ce trade" : "Voir le trade et calculer ma taille"}</a>
   </article>`;

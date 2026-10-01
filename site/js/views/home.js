@@ -2,7 +2,7 @@
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
 import { goLive } from "../live.js";
-import { setupCard } from "../setup.js";
+import { PROCHE_PCT, SEUIL_SOLIDE, espace, ordre, setupCard } from "../setup.js";
 import { riskBudget } from "../sizing.js";
 import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast } from "../ui.js";
 
@@ -76,16 +76,36 @@ export async function render(main, ctx) {
       ${open.length ? `<a class="btn discret" href="#/trades">${open.length} trade${open.length > 1 ? "s" : ""} en cours</a>` : ""}
     </div>
 
-    ${trades.length ? `<section class="section"><h2>Trades validés</h2>
-      <p class="muted">Le bot a vu la confirmation. Le feu de chaque carte te dit si le prix est encore au bon endroit.</p>
-      <div class="grille setups">${trades.map((s) => setupCard(s, me)).join("")}</div></section>` : ""}
+    ${sigs.length ? `
+    <section class="section espace imminent" id="esp-imminent">
+      <h2>⚡ Imminent</h2>
+      <p class="muted">À ouvrir maintenant ou très bientôt : le prix est dans la zone d'entrée, ou à moins de ${String(PROCHE_PCT).replace(".", ",")} %.
+        Garde l'app Kraken sous la main et lis le feu de la carte.</p>
+      <div class="grille setups" data-esp="imminent"></div>
+      <p class="vide-espace small muted" data-vide="imminent">Lecture des prix Kraken…</p>
+    </section>
+    <section class="section espace" id="esp-solide">
+      <h2>💪 Les plus solides</h2>
+      <p class="muted">Confiance du bot de ${SEUIL_SOLIDE}/100 ou plus : beaucoup de signaux vont dans le même sens.
+        Ça reste un pari : c'est le stop qui te protège.</p>
+      <div class="grille setups" data-esp="solide"></div>
+      <p class="vide-espace small muted" data-vide="solide">Aucun setup à forte confiance en attente.</p>
+    </section>
+    <section class="section espace" id="esp-fragile">
+      <h2>Moins solides</h2>
+      <p class="muted">Moins de signaux d'accord (confiance sous ${SEUIL_SOLIDE}/100). Utile pour apprendre ; si tu entres, sois plus prudent.</p>
+      <div class="grille setups" data-esp="fragile"></div>
+      <p class="vide-espace small muted" data-vide="fragile">Aucun.</p>
+    </section>
+    <details class="section espace" id="esp-fini"><summary><h2 style="display:inline">Ratés, trop tard ou expirés</h2>
+      <span class="muted small" data-compte="fini"></span></summary>
+      <p class="muted">Le prix a touché le stop, a déjà atteint l'objectif 1 sans nous, ou les niveaux sont trop anciens. On n'y entre plus.</p>
+      <div class="grille setups" data-esp="fini"></div>
+    </details>
+    <div id="cartes-attente" hidden>${[...sigs].sort(ordre).map((s) => setupCard(s, me)).join("")}</div>` : ""}
 
     ${scan && !trades.length && (scan.reasons || []).length ? `<section class="section"><h2>Pourquoi pas de trade</h2>
       <div class="bloc"><ul>${scan.reasons.slice(0, 5).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div></section>` : ""}
-
-    ${watch.length ? `<section class="section"><h2>À surveiller</h2>
-      <p class="muted">Pas encore d'entrée : le bot attend une confirmation. Le feu passe au vert quand la condition est remplie.</p>
-      <div class="grille setups">${watch.map((s) => setupCard(s, me)).join("")}</div></section>` : ""}
 
     ${scan?.opportunities?.length ? `<section class="section"><h2>Tous les marchés analysés</h2>
       <div class="ligne">${scan.opportunities.slice(0, 40).map((o) => {
@@ -103,12 +123,35 @@ export async function render(main, ctx) {
       <ul>${scan.data_issues.slice(0, 12).map((d) => `<li class="small">${esc(d)}</li>`).join("")}</ul></details></section>` : ""}
   `;
 
-  const shown = [...trades, ...watch];
-  const stop = goLive(shown.map((s) => {
+  // Rangement des cartes : par confiance d'abord, puis « imminent » / « fini » dès que le prix Kraken est lu.
+  const where = new Map();
+  const ranger = (s, ph) => {
     const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
-    return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]") };
-  }));
-  ctx.onLeave(stop);
+    const esp = espace(s, ph);
+    if (!card || where.get(s.id) === esp) return;
+    where.set(s.id, esp);
+    const box = main.querySelector(`[data-esp="${esp}"]`);
+    const next = [...box.children].find((c) => ordre(s, sigs.find((x) => String(x.id) === c.dataset.sig) || s) < 0);
+    box.insertBefore(card, next || null);
+    for (const k of ["imminent", "solide", "fragile", "fini"]) {
+      const n = main.querySelector(`[data-esp="${k}"]`).children.length;
+      const vide = main.querySelector(`[data-vide="${k}"]`);
+      if (vide) vide.hidden = n > 0;
+      if (k === "fini") { main.querySelector("#esp-fini").hidden = n === 0; main.querySelector('[data-compte="fini"]').textContent = `(${n})`; }
+      if (k === "fragile") main.querySelector("#esp-fragile").hidden = n === 0;
+    }
+    const vi = main.querySelector('[data-vide="imminent"]');
+    if (ph && vi && vi.textContent.startsWith("Lecture")) vi.textContent = "Rien d'imminent : aucun prix n'est dans sa zone d'entrée pour l'instant. Le bot surveille.";
+  };
+  if (sigs.length) {
+    sigs.forEach((s) => ranger(s, null));
+    main.querySelector("#cartes-attente").remove();
+    const stop = goLive(sigs.map((s) => {
+      const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
+      return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]") };
+    }), { onPhase: ranger });
+    ctx.onLeave(stop);
+  }
 
   main.querySelector("#scan-now").addEventListener("click", (e) => busy(e.currentTarget, async () => toast(await backend.requestScan())));
 }

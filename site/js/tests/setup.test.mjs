@@ -1,7 +1,7 @@
 // Logique des cartes « setup » : feu (où en est le prix), scénario dessiné, gains en €.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { gains, minutesToClose, phase, projection } from "../setup.js";
+import { espace, gains, minutesToClose, ordre, phase, projection } from "../setup.js";
 
 const NOW = Date.UTC(2026, 9, 1, 12, 7);
 const futur = new Date(NOW + 3600e3).toISOString();
@@ -57,4 +57,18 @@ test("gains en € : risque du membre, TP 30/40/30, R nets si disponibles", () =
   assert.equal(g.net, false);
   assert.equal(gains({ rr: [1, 2, 3], rr_net: [0.8, 1.7, 2.6] }, { balance_eur: 90, risk_pct: 1 }).net, true);
   assert.equal(gains({}, { balance_eur: 90, risk_pct: 1 }).all, null);
+});
+
+test("rangement : imminent si dans la zone ou à ≤ 0,5 % ; sinon selon la confiance ; raté/trop tard/expiré à part", () => {
+  const fort = { ...short, score: 82 }, faible = { ...short, score: 70 };
+  assert.equal(espace(fort, null), "solide");                         // prix pas encore lu
+  assert.equal(espace(faible, null), "fragile");
+  assert.equal(espace(faible, phase(faible, 100.5, { now: NOW })), "imminent");   // dans la zone
+  assert.equal(espace(faible, phase(faible, 99.6, { now: NOW })), "imminent");    // 0,4 % sous la zone
+  assert.equal(espace(fort, phase(fort, 99, { now: NOW })), "solide");            // 1 % : pas encore
+  assert.equal(espace(fort, phase(fort, 103.5, { now: NOW })), "fini");           // stop touché
+});
+test("ordre : validés d'abord, puis confiance décroissante", () => {
+  const l = [{ status: "WATCH", score: 90 }, { status: "TRADE", score: 70 }, { status: "WATCH", score: 95 }].sort(ordre);
+  assert.deepEqual(l.map((x) => x.score), [70, 95, 90]);
 });

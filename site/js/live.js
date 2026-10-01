@@ -12,7 +12,7 @@ const TICK_MS = 30_000;
  * items : [{ s, chartEl, phaseEl, noteEl? }] — un par signal affiché.
  * opts.interactive / opts.bars passés au graphique. Retourne une fonction d'arrêt.
  */
-export function goLive(items, { interactive = false, bars = 48 } = {}) {
+export function goLive(items, { interactive = false, bars = 48, onPhase = null } = {}) {
   const st = items.map((it) => ({ ...it, chart: null, candles: null, price: null, visible: !("IntersectionObserver" in window), loading: null }));
   let stopped = false;
 
@@ -42,16 +42,19 @@ export function goLive(items, { interactive = false, bars = 48 } = {}) {
     const ph = phase(x.s, now, { candles: x.live ? x.candles : [] });
     x.phaseEl.className = `feu ${ph.ton}`;
     x.phaseEl.innerHTML = phaseHtml(ph);
+    x.ph = ph;
+    onPhase?.(x.s, ph);
     if (x.chart && x.candles?.length) x.chart.setProjection(projection(x.s, x.candles, x.price));
   }
 
   function applyPrice(x, p) {
-    if (p == null || !x.candles?.length) return;
+    if (p == null) return;
     x.price = p;
+    if (!x.candles?.length) return; // graphique pas encore chargé (carte hors écran) : le feu se met quand même à jour
     const last = x.candles.at(-1);
     const nowBar = Math.floor(Date.now() / 1000 / 900) * 900;
     if (+last[0] < nowBar) { // nouvelle bougie 15 min : on recharge les vraies bougies (au plus 1 fois / 2 min)
-      if (Date.now() - (x.lastLoad || 0) > (x.live ? 60_000 : 300_000)) load(x);
+      if (x.visible && Date.now() - (x.lastLoad || 0) > (x.live ? 60_000 : 300_000)) load(x);
       return;
     }
     last[4] = p; last[2] = Math.max(+last[2], p); last[3] = Math.min(+last[3], p);
@@ -60,11 +63,10 @@ export function goLive(items, { interactive = false, bars = 48 } = {}) {
 
   async function tick() {
     if (stopped || document.hidden) return;
-    const vis = st.filter((x) => x.visible);
-    if (!vis.length) return;
+    // Un seul appel de prix pour toutes les cartes (même hors écran) : sert à les ranger (imminent, etc.).
     try {
-      const fx = await prices(vis.map((x) => x.s), { fx: false });
-      for (const x of vis) {
+      const fx = await prices(st.map((x) => x.s), { fx: false });
+      for (const x of st) {
         applyPrice(x, fx.get(x.s)?.last ?? null);
         draw(x);
       }
@@ -78,13 +80,14 @@ export function goLive(items, { interactive = false, bars = 48 } = {}) {
         const x = st.find((y) => y.chartEl === e.target);
         if (!x) continue;
         x.visible = e.isIntersecting;
-        if (x.visible && !x.candles) load(x).then(tick);
+        if (x.visible && !x.candles) load(x);
       }
     }, { rootMargin: "200px" });
     st.forEach((x) => io.observe(x.chartEl));
   } else {
-    Promise.all(st.map(load)).then(tick);
+    st.forEach(load);
   }
+  tick();
   const timer = setInterval(tick, TICK_MS);
   const onVis = () => { if (!document.hidden) tick(); };
   document.addEventListener("visibilitychange", onVis);

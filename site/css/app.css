@@ -327,3 +327,19 @@ figure.section { margin: 16px 0 0; }
   .setup-chiffres dd { font-size: 1rem; }
   .setup-graph { height: 200px; }
 }
+
+/* ---------- Espaces de l'accueil : imminent / plus solides / moins solides / finis ---------- */
+.espace.imminent {
+  border: 2px solid var(--ambre); border-radius: var(--r-ticket); padding: 18px;
+  background: linear-gradient(180deg, var(--ambre-fond), transparent 70%);
+}
+.espace.imminent h2 { color: var(--ambre); }
+.vide-espace { margin: 4px 0 0; }
+.vide-espace[hidden], .espace[hidden] { display: none; }
+details.espace > summary { cursor: pointer; list-style: none; }
+details.espace > summary::-webkit-details-marker { display: none; }
+details.espace > summary::before { content: "▸ "; color: var(--brume); }
+details.espace[open] > summary::before { content: "▾ "; }
+.confiance { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jauge { flex: 1 1 80px; max-width: 160px; height: 8px; border-radius: 99px; background: var(--abysse); overflow: hidden; }
+.jauge i { display: block; height: 100%; border-radius: 99px; background: var(--ambre); }
