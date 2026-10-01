@@ -14,7 +14,7 @@ export async function render(main, ctx) {
       <label class="champ"><span>Actif</span>
         <input id="q" list="insts" placeholder="Tape BTC, ETH, TSLA, PAXG…" autocomplete="off">
         <datalist id="insts">${insts.map((i) => `<option value="${esc(i.display)}">${esc(i.asset_class)} · ${esc(i.venue)}</option>`).join("")}</datalist>
-        <small>${insts.length ? `${insts.length} instruments disponibles (liste mise à jour par le bot)` : "La liste arrive après le premier scan du bot."}</small>
+        <small>${insts.length ? `${insts.length} paires disponibles en France, lues chez Kraken · <a href="#/marches">voir la liste</a>` : "La liste arrive après le premier scan du bot."}</small>
       </label>
       <div id="form" style="margin-top:16px"></div>
     </div>`;

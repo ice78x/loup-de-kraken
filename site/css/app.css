@@ -343,3 +343,22 @@ details.espace[open] > summary::before { content: "▾ "; }
 .confiance { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .jauge { flex: 1 1 80px; max-width: 160px; height: 8px; border-radius: 99px; background: var(--abysse); overflow: hidden; }
 .jauge i { display: block; height: 100%; border-radius: 99px; background: var(--ambre); }
+
+/* Zones colorées sous les bougies (graphique setup) */
+.bandes, .bandes-hote { position: absolute; inset: 0; }
+.bandes { z-index: 0; pointer-events: none; overflow: hidden; }
+.bandes-hote { z-index: 1; }
+.bandes > div { position: absolute; overflow: hidden; }
+.bandes .b-zone { background: rgba(242, 181, 68, .22); border-top: 1px solid rgba(242, 181, 68, .5); border-bottom: 1px solid rgba(242, 181, 68, .5); }
+.bandes .b-gain { background: rgba(61, 220, 151, .13); }
+.bandes .b-perte { background: rgba(255, 107, 107, .16); }
+.bandes span { position: absolute; left: 8px; font: 700 11px var(--texte); letter-spacing: .02em; text-transform: uppercase; opacity: .85; white-space: nowrap; }
+.bandes .b-gain span { color: var(--long); top: 6px; }
+.bandes .b-perte span { color: var(--short); bottom: 4px; }
+
+/* ---------- Page Marchés ---------- */
+.marches { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
+.marche { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 12px;
+  background: var(--houle); border: 1px solid var(--ligne); border-radius: var(--r-champ); }
+.marche b { font-family: var(--titre); }
+.marche .pastille { margin-left: auto; }

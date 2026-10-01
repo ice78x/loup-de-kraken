@@ -84,7 +84,7 @@ export async function render(main, ctx, id) {
     </section>`;
 
   ctx.onLeave(goLive([{ s, chartEl: main.querySelector("#chart"), phaseEl: main.querySelector("#phase"), noteEl: main.querySelector("#chart-note") }],
-    { interactive: true, bars: 160 }));
+    { interactive: true, bars: 64 }));
 
   const inst = { instrument_key: s.instrument_key, display: s.display, venue: s.venue, api_symbol: s.api_symbol,
     api_asset_class: s.api_asset_class, asset_class: s.asset_class, quote: s.quote, can_short: true, max_leverage: 10 };

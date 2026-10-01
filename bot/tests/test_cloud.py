@@ -212,3 +212,23 @@ def test_envoi_groupe_cles_differentes_signaux_trade_et_watch():
     assert "missing=default" in seen["prefer"]
     sb.insert("scans", [{"a": 1}, {"a": 2}])           # mêmes clés : pas de paramètre columns
     assert "columns" not in seen["params"]
+
+
+def test_liste_des_paires_du_site_exacte_et_nettoyee(settings, tmp_path):
+    """Le site ne garde QUE les paires négociables renvoyées par Kraken pour le pays, dans les devises choisies ;
+    une paire qui n'est plus disponible disparaît de la liste."""
+    fk = FakeKraken(4)
+    pg = FakePostgrest()
+    sb = Supabase("https://x.supabase.co", "sb_secret_x", transport=httpx.MockTransport(pg.handler))
+    s = settings.model_copy(update={"quote_currencies": ["USD"], "futures_enabled": False, "public_min_interval_s": 0})
+    app = App.build(s, spot_transport=httpx.MockTransport(fk.handler), news_transport=httpx.MockTransport(down),
+                    db=Database(tmp_path / "i.db"))
+    pg.tables["instruments"] = [{"key": "spot:OLDUSD", "display": "OLD/USD", "updated_at": "2020-01-01T00:00:00+00:00"}]
+    n = cloud.push_instruments(sb, app, min_rows=1)
+    keys = {r["key"] for r in pg.tables["instruments"]}
+    assert "spot:OLDUSD" not in keys                       # délistée → retirée
+    assert n == len(keys) and {"spot:XXBTZUSD", "spot:TSLAxUSD"} <= keys
+    assert all(r["quote"] == "USD" for r in pg.tables["instruments"])   # pas de paires EUR
+    assert "spot:ZEURZUSD" not in keys                     # le change EUR/USD n'est pas une paire de trading
+    calls = [c for c in fk.calls if c == "/0/public/AssetPairs"]
+    assert calls                                           # liste lue chez Kraken, jamais codée en dur

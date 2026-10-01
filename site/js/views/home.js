@@ -107,7 +107,8 @@ export async function render(main, ctx) {
     ${scan && !trades.length && (scan.reasons || []).length ? `<section class="section"><h2>Pourquoi pas de trade</h2>
       <div class="bloc"><ul>${scan.reasons.slice(0, 5).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div></section>` : ""}
 
-    ${scan?.opportunities?.length ? `<section class="section"><h2>Tous les marchés analysés</h2>
+    ${scan?.opportunities?.length ? `<section class="section"><div class="ligne entre"><h2 style="margin:0">Marchés analysés ce scan</h2>
+      <a href="#/marches">Voir toutes les paires Kraken Pro France →</a></div>
       <div class="ligne">${scan.opportunities.slice(0, 40).map((o) => {
         const k = o.state === "LONG" ? "long" : o.state === "SHORT" ? "short" : o.state.startsWith("SURV") ? "ambre" : "";
         return `<span class="pastille ${k}" title="score ${o.score ?? "—"}">${esc(o.display)} · ${esc(o.state === "WAIT" ? "attendre" : o.state.toLowerCase())}</span>`;
@@ -149,7 +150,7 @@ export async function render(main, ctx) {
     const stop = goLive(sigs.map((s) => {
       const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
       return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]") };
-    }), { onPhase: ranger });
+    }), { onPhase: ranger, bars: 32 });
     ctx.onLeave(stop);
   }
 

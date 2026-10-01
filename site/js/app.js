@@ -8,6 +8,7 @@ import * as signal from "./views/signal.js";
 import * as trades from "./views/trades.js";
 import * as trade from "./views/trade.js";
 import * as newtrade from "./views/newtrade.js";
+import * as markets from "./views/markets.js";
 import * as club from "./views/club.js";
 import * as bot from "./views/bot.js";
 import * as learn from "./views/learn.js";
@@ -32,7 +33,7 @@ const ROUTES = [
   [/^#?\/?$/, home, "#/"], [/^#\/signal\/(\d+)$/, signal, "#/"], [/^#\/trades$/, trades, "#/trades"],
   [/^#\/trade\/nouveau$/, newtrade, "#/trades"], [/^#\/trade\/(\d+)$/, trade, "#/trades"],
   [/^#\/club$/, club, "#/club"], [/^#\/membre\/([\w-]+)$/, club, "#/club"], [/^#\/bot$/, bot, "#/bot"],
-  [/^#\/apprendre$/, learn, "#/apprendre"], [/^#\/compte$/, account, "#/compte"],
+  [/^#\/apprendre$/, learn, "#/apprendre"], [/^#\/marches$/, markets, "#/"], [/^#\/compte$/, account, "#/compte"],
 ];
 
 const ctx = {

@@ -131,15 +131,31 @@ def push_scan(sb: Supabase, rep) -> int:
     return row["id"]
 
 
-def push_instruments(sb: Supabase, app: App) -> None:
+def site_universe(app: App) -> list:
+    """Paires affichées sur le site = EXACTEMENT ce que Kraken déclare disponible pour le pays (FR) :
+    spot et xStocks via AssetPairs?country_code=FR, perpétuels non interdits pour ce pays, statut négociable,
+    dans les devises de cotation choisies (USD par défaut). Le scanner, lui, n'analyse en profondeur que les plus liquides."""
+    quotes = set(app.taxonomy.quotes)
+    return [i for i in app.discovery.discover()
+            if i.tradable and i.account_access != "refusé" and (i.venue == "futures" or i.quote in quotes)]
+
+
+def push_instruments(sb: Supabase, app: App, min_rows: int = 20) -> int:
+    start = datetime.now(timezone.utc).isoformat()
     rows = [{"key": i.key, "display": i.display, "venue": i.venue, "api_symbol": i.symbol,
              "api_asset_class": i.api_asset_class, "asset_class": i.asset_class, "base": i.base, "quote": i.quote,
              "can_long": i.can_long, "can_short": i.can_short,
              "max_leverage": max(i.max_leverage_long, i.max_leverage_short), "ordermin": i.ordermin,
              "lot_decimals": i.lot_decimals, "pair_decimals": i.pair_decimals,
              "updated_at": datetime.now(timezone.utc).isoformat()}
-            for i in tradable_universe(app.discovery.discover())]
+            for i in site_universe(app)]
     sb.upsert("instruments", rows, "key")
+    # Retire les paires qui ne sont plus disponibles (délistées, plus ouvertes en France, autre devise…).
+    # Garde-fou : seulement si Kraken a bien renvoyé une liste complète.
+    if len(rows) >= min_rows:
+        sb.delete("instruments", {"updated_at": f"lt.{start}"})
+    log.info("paires Kraken (%s) envoyées au site : %d", app.settings.country_code, len(rows))
+    return len(rows)
 
 
 def _bars5(app: App, t: dict) -> pd.DataFrame:
