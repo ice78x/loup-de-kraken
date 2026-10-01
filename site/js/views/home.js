@@ -53,6 +53,10 @@ export function newsBlock(n) {
     ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">Lire la source</a>` : ""}</details>`;
 }
 
+// Scan demandé depuis le site : on garde l'heure de lancement même si on change de page.
+let lancement = null; // { at: ms, apres: id du scan affiché au moment du clic }
+const ATTENTE_MAX = 8 * 60_000; // au-delà, on prévient que GitHub est lent
+
 export async function render(main, ctx) {
   const me = ctx.me;
   const [scan, mine, newIdeas, membres] = await Promise.all([backend.latestScan(), backend.trades({ userId: me.id, limit: 300 }),
@@ -93,6 +97,7 @@ export async function render(main, ctx) {
       (${pct(+me.max_daily_loss_pct)}). ${me.guardrails === false ? "Tes garde-fous sont coupés : rien n'est bloqué, mais c'est souvent le moment de faire une pause."
         : "Le site bloque les nouveaux trades jusqu'à demain."}</div>` : ""}
 
+    <div id="scan-etat" aria-live="polite"></div>
     <div class="ligne" style="margin-top:16px">
       <button class="btn principal" id="scan-now">Scanner maintenant</button>
       <a class="btn" href="#/trade/nouveau">Trade manuel</a>
@@ -206,5 +211,45 @@ export async function render(main, ctx) {
   }
 
   ctx.onLeave(soldeLive(main, me));
-  main.querySelector("#scan-now").addEventListener("click", (e) => busy(e.currentTarget, async () => toast(await backend.requestScan())));
+  // Suivi du scan : un scan dure en général 2 à 4 minutes (mise en route de GitHub + analyse).
+  // On interroge la base toutes les 20 s et on affiche « Nouveau scan disponible » dès qu'il arrive (scan demandé ou scan horaire).
+  const etat = main.querySelector("#scan-etat");
+  const dureeAnalyse = scan?.duration_s ? Math.round(+scan.duration_s) : null;
+  const dessinerEtat = (nouveau = null) => {
+    if (nouveau) {
+      etat.innerHTML = `<div class="alerte verte ligne entre"><span>✅ <b>Nouveau scan disponible</b> (${dt(nouveau.created_at)}).</span>
+        <button class="btn principal mini" id="actualiser">Actualiser</button></div>`;
+      etat.querySelector("#actualiser").addEventListener("click", () => { lancement = null; render(main, ctx); });
+      return;
+    }
+    if (!lancement) { etat.innerHTML = ""; return; }
+    const ecoule = Date.now() - lancement.at;
+    const min = Math.floor(ecoule / 60000), sec = Math.floor((ecoule % 60000) / 1000);
+    etat.innerHTML = ecoule < ATTENTE_MAX
+      ? `<div class="alerte"><b>⏳ Scan en cours</b> depuis ${min ? `${min} min ` : ""}${sec} s. Il faut en général <b>2 à 4 minutes</b>
+          (démarrage de GitHub ≈ 1 min${dureeAnalyse ? `, puis ≈ ${dureeAnalyse} s d'analyse au dernier scan` : ", puis l'analyse"}). Tu peux rester ici : un message apparaîtra.</div>`
+      : `<div class="alerte rouge"><b>Le scan prend plus de temps que prévu</b> (${min} min). GitHub est peut-être lent ou en panne :
+          réessaie dans quelques minutes, ou regarde l'onglet Actions sur GitHub. <button class="btn mini" id="actualiser">Actualiser</button></div>`;
+    etat.querySelector("#actualiser")?.addEventListener("click", () => { lancement = null; render(main, ctx); });
+  };
+  const verifier = async () => {
+    if (document.hidden) return;
+    const dernier = await backend.latestScan().catch(() => null);
+    if (dernier && scan && dernier.id !== scan.id) return dessinerEtat(dernier);
+    if (dernier && !scan) return dessinerEtat(dernier);
+    dessinerEtat();
+  };
+  dessinerEtat();
+  const tTick = setInterval(() => { if (lancement && !etat.querySelector(".verte")) dessinerEtat(); }, 1000);
+  const tPoll = setInterval(verifier, lancement ? 20_000 : 60_000);
+  ctx.onLeave(() => { clearInterval(tTick); clearInterval(tPoll); });
+
+  main.querySelector("#scan-now").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    toast(await backend.requestScan());
+    lancement = { at: Date.now() };
+    dessinerEtat();
+    clearInterval(tPoll);
+    const t2 = setInterval(verifier, 20_000);
+    ctx.onLeave(() => clearInterval(t2));
+  }));
 }
