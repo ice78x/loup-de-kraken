@@ -1,5 +1,7 @@
 // Carte « setup » expliquée pour débutants : où en est le prix, scénario du bot, combien on risque / peut gagner.
 // Logique pure (testée dans tests/setup.test.mjs) + HTML de la carte. Le graphique en direct est dans live.js.
+import { krakenFees } from "./fees.js";
+import { liqFraction } from "./sizing.js";
 import { STRAT, ago, esc, eur, pct, pq } from "./ui.js";
 
 const BAR = 900; // bougies de 15 minutes
@@ -16,10 +18,49 @@ export const minutesToClose = (now = Date.now()) => 15 - Math.floor((now / 60000
  * Retourne { code, ton, icone, titre, texte } — uniquement à partir de vrais prix (jamais inventés).
  * candles : bougies 15 min [t, o, h, l, c] (la dernière est en cours, l'avant-dernière est la dernière fermée).
  */
+/**
+ * Ce que le prix a DÉJÀ touché depuis la détection, d'après les vraies bougies 15 min (après la bougie de détection).
+ * Retourne { hit: "sl" | "tp1" | "tp2" | "tp3" | null, tpAvant (objectifs touchés avant le stop), entered }.
+ * Si une même bougie touche le stop et un objectif, on compte le stop (on ne peut pas savoir lequel est venu en premier).
+ */
+export function touches(s, candles = []) {
+  const created = new Date(s.created_at).getTime();
+  if (!candles?.length || !isFinite(created)) return { hit: null, tpAvant: 0, entered: s.status === "TRADE" };
+  const t0 = Math.floor(created / 1000 / BAR) * BAR + BAR;
+  const L = isLong(s), lo = +s.entry_low, hi = +s.entry_high, sl = +s.sl;
+  const tps = [+s.tp1, +s.tp2, +s.tp3];
+  let entered = s.status === "TRADE", best = 0;
+  for (const k of candles) {
+    if (+k[0] < t0) continue;
+    const h = +k[2], l = +k[3];
+    if (!entered && l <= hi && h >= lo) entered = true;
+    if (L ? l <= sl : h >= sl) return { hit: "sl", tpAvant: best, entered };
+    while (best < 3 && isFinite(tps[best]) && (L ? h >= tps[best] : l <= tps[best])) best++;
+    if (best === 3) break;
+  }
+  return { hit: best ? `tp${best}` : null, tpAvant: best, entered };
+}
+
 export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   const lo = +s.entry_low, hi = +s.entry_high, sl = +s.sl, tp1 = +s.tp1;
   const L = isLong(s);
   const watch = s.status === "WATCH";
+  const t = touches(s, candles);
+  if (t.hit === "sl") {
+    return { code: "stop", ton: "short", icone: "❌", titre: "SL touché",
+      texte: t.entered ? `Le prix a touché le stop (${pq(sl, s.quote)})${t.tpAvant ? ` après l'objectif ${t.tpAvant}` : ""}. Si tu étais dans le trade, il est coupé. On n'y entre plus.`
+        : `Le prix a touché le stop (${pq(sl, s.quote)}) avant de confirmer l'entrée : scénario annulé, on n'y entre plus.` };
+  }
+  if (t.hit) {
+    const n = +t.hit.slice(2);
+    if (t.entered && !watch) {
+      return { code: "tp", ton: "long", icone: "🎯", titre: `TP${n} touché`, tp: n,
+        texte: n === 3 ? "Objectif 3 atteint : le plan est terminé. Trop tard pour entrer maintenant."
+          : `Objectif ${n} atteint. Si tu es dans le trade : encaisse ${n === 1 ? "30" : "40"} % et remonte ton stop (au prix d'entrée si le graphique confirme). Trop tard pour entrer maintenant.` };
+    }
+    return { code: "parti", ton: "", icone: "🏃", titre: `TP${n} touché sans nous`, tp: n,
+      texte: "Le prix a atteint l'objectif avant que l'entrée soit confirmée. On ne court jamais après un mouvement." };
+  }
   if (s.expires_at && new Date(s.expires_at).getTime() < now) {
     return { code: "expire", ton: "", icone: "⌛", titre: "Expiré",
       texte: "Ces niveaux ont plus de 4 heures. N'entre pas : attends le prochain scan." };
@@ -30,12 +71,14 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   }
   const dist = (target) => Math.abs(target - price) / price * 100;
   if (L ? price <= sl : price >= sl) {
-    return { code: "stop", ton: "short", icone: "❌", titre: "Annulé",
-      texte: `Le prix a touché le stop (${pq(sl, s.quote)}). Le scénario est raté : on oublie ce trade.` };
+    return { code: "stop", ton: "short", icone: "❌", titre: "SL touché",
+      texte: `Le prix est au stop (${pq(sl, s.quote)}). Si tu étais dans le trade, il est coupé. On n'y entre plus.` };
   }
   if (L ? price >= tp1 : price <= tp1) {
-    return { code: "parti", ton: "", icone: "🏃", titre: "Trop tard",
-      texte: "Le prix a déjà atteint l'objectif 1 sans nous. On ne court jamais après un mouvement." };
+    if (!watch) return { code: "tp", ton: "long", icone: "🎯", titre: "TP1 touché", tp: 1,
+      texte: "Objectif 1 atteint. Si tu es dans le trade : encaisse 30 % et remonte ton stop si le graphique confirme. Trop tard pour entrer maintenant." };
+    return { code: "parti", ton: "", icone: "🏃", titre: "TP1 touché sans nous", tp: 1,
+      texte: "Le prix a déjà atteint l'objectif 1 sans confirmation d'entrée. On ne court jamais après un mouvement." };
   }
   if (price >= lo && price <= hi) {
     if (!watch) {
@@ -92,13 +135,56 @@ export function projection(s, candles, price = null) {
   return { ok: line(ways), rate: line([[tEntry, entry], [tEntry + 5, +s.sl]]) };
 }
 
-/** Combien on risque / peut gagner en € avec les réglages du membre (TP 30/40/30). */
-export function gains(s, me) {
-  const risk = ((+me.balance_eur || 0) * (+me.risk_pct || 0)) / 100;
-  const net = Array.isArray(s.rr_net) && s.rr_net.length === 3;
-  const r = (net ? s.rr_net : s.rr || []).map(Number);
-  if (r.length < 3 || r.some((x) => !isFinite(x))) return { risk, tp1: null, all: null, net };
-  return { risk, tp1: risk * r[0] * 0.3, all: risk * (0.3 * r[0] + 0.4 * r[1] + 0.3 * r[2]), net, r };
+/** Mouvement de prix (en %) qui liquide une position isolée à ce levier (règles Kraken, voir liqFraction dans sizing.js). */
+const liqPctOf = (s, lev, maxLev = 10) => liqFraction(lev, s.venue || "spot", maxLev) * 100;
+/** Mise de référence pour le levier conseillé : 25 % du solde. */
+export const MISE_REF = 25;
+
+/** Écarts du plan en % du prix d'entrée (milieu de zone) + frais Kraken du marché (en %). */
+export function ecarts(s) {
+  const e = (+s.entry_low + +s.entry_high) / 2;
+  const d = (x) => (x == null || !isFinite(+x) || !(e > 0) ? null : (Math.abs(+x - e) / e) * 100);
+  const f = krakenFees(s);
+  return { slPct: d(s.sl), tpPct: [d(s.tp1), d(s.tp2), d(s.tp3)], maker: f.maker, taker: f.taker };
+}
+
+/**
+ * Levier conseillé pour un setup (choisi APRÈS le stop, jamais pour risquer plus) :
+ * - assez petit pour que la liquidation reste au moins 2× plus loin que le stop ;
+ * - avec une mise de 25 % du solde, la perte au stop ≈ ton risque par trade (1 % par défaut) ;
+ * - SHORT en spot : x2 minimum (Kraken l'exige) ; jamais plus que le maximum Kraken de la paire, ni x10.
+ * Retourne { lev, misePct (mise qui donne exactement ton risque à ce levier), liqPct, slPct, note }.
+ */
+export function levierConseille(s, me = {}, maxLev = 10) {
+  const { slPct, maker, taker } = ecarts(s);
+  const cap = Math.max(1, Math.min(10, +maxLev || 10));
+  const minLev = !isLong(s) && (s.venue || "spot") === "spot" ? Math.min(2, cap) : 1;
+  if (!(slPct > 0)) return { lev: minLev, misePct: null, liqPct: liqPctOf(s, minLev, maxLev), slPct: null, note: "stop manquant" };
+  const perte = slPct + maker + taker; // % de la position perdu au stop, frais compris
+  let sur = cap; // plus grand levier qui garde la liquidation au moins 2× plus loin que le stop
+  while (sur > 1 && liqPctOf(s, sur, maxLev) < 2 * slPct) sur--;
+  const risk = +me.risk_pct || 1;
+  const vise = Math.round(risk / ((MISE_REF / 100) * perte));
+  const lev = Math.max(minLev, Math.min(cap, sur, Math.max(1, vise)));
+  const misePct = (risk / (lev * perte)) * 100;
+  return { lev, misePct, liqPct: liqPctOf(s, lev, maxLev), slPct, note: lev < vise ? "plafonné pour garder la liquidation loin du stop" : "" };
+}
+
+/**
+ * Résultat en % de la MISE (l'argent bloqué sur le trade) pour un levier donné, frais Kraken compris
+ * (entrée en ordre limite, sortie au stop au marché, objectifs en ordres limite). TP encaissés 30 / 40 / 30 %.
+ * Si la liquidation arrive avant le stop, la perte est toute la mise.
+ */
+export function scenario(s, lev, maxLev = 10) {
+  const { slPct, tpPct, maker, taker } = ecarts(s);
+  if (!(slPct > 0)) return null;
+  const liqPct = liqPctOf(s, lev, maxLev);
+  const liqAvant = liqPct <= slPct;
+  const perte = liqAvant ? 100 : Math.min(100, lev * (slPct + maker + taker));
+  const ok = tpPct.every((x) => x != null);
+  const tp1 = tpPct[0] != null ? lev * 0.3 * (tpPct[0] - 2 * maker) : null;
+  const tout = ok ? lev * (0.3 * tpPct[0] + 0.4 * tpPct[1] + 0.3 * tpPct[2] - 2 * maker) : null;
+  return { lev, perte, tp1, tout, liqPct, liqAvant };
 }
 
 /** Score à partir duquel un setup est classé « plus solide » (confiance du bot, 0–100). */
@@ -112,7 +198,7 @@ export const PROCHE_PCT = 0.5;
  * ph = résultat de phase() (null tant que le prix n'est pas lu).
  */
 export function espace(s, ph) {
-  if (ph && ["stop", "parti", "expire"].includes(ph.code)) return "fini";
+  if (ph && ["stop", "tp", "parti", "expire"].includes(ph.code)) return "fini";
   if (ph && (["go", "condition", "zone"].includes(ph.code) || (ph.code === "attendre" && ph.dist != null && ph.dist <= PROCHE_PCT))) return "imminent";
   return +s.score >= SEUIL_SOLIDE ? "solide" : "fragile";
 }
@@ -141,21 +227,77 @@ export function phaseHtml(ph) {
 
 const chiffre = (label, val, cl, aide) =>
   `<div><dt>${label}</dt><dd class="num ${cl}">${val}</dd>${aide ? `<span class="small muted">${aide}</span>` : ""}</div>`;
+const p1 = (x) => (x == null || !isFinite(x) ? "—" : x.toLocaleString("fr-FR", { maximumFractionDigits: x < 10 ? 1 : 0 }) + " %");
 
-export function chiffres(s, me) {
-  const g = gains(s, me);
-  return `<dl class="setup-chiffres">
-    ${chiffre("Si ça rate", g.risk ? "−" + eur(g.risk) : "—", "perte", "le stop coupe la perte")}
-    ${chiffre("Objectif 1", g.tp1 != null ? "+" + eur(g.tp1) : "—", "gain", "30 % encaissés")}
-    ${chiffre("Si tout réussit", g.all != null ? "+" + eur(g.all) : "—", "gain", g.net ? "après frais estimés" : "avant frais")}
-  </dl>`;
+/** Levier conseillé, bien visible (carte d'accueil et page du signal). */
+export function levierBadge(s, me, maxLev) {
+  const c = levierConseille(s, me, maxLev);
+  return `<div class="levier-conseil"><span>Levier conseillé</span><b class="num">x${c.lev}</b>
+    <span class="small muted">${c.lev === 1 ? "sans effet de levier" : "marge isolée"} · liquidation ≈ ${p1(c.liqPct)} contre ${p1(c.slPct)} pour le stop</span></div>`;
 }
 
-export function planTable(s) {
+/**
+ * Bloc « si ça rate / objectif 1 / si tout réussit » en % de la mise, pour chaque levier (boutons x1, x2…).
+ * Le levier conseillé est sélectionné ; toucher un autre levier montre l'effet sur les mêmes chiffres.
+ */
+export function chiffres(s, me, maxLev = 10) {
+  const c = levierConseille(s, me, maxLev);
+  const cap = Math.max(1, Math.min(10, +maxLev || 10));
+  const minLev = !isLong(s) && (s.venue || "spot") === "spot" ? Math.min(2, cap) : 1;
+  const levs = [...new Set([1, 2, 3, 5, 10, c.lev])].filter((l) => l >= minLev && l <= cap).sort((a, b) => a - b);
+  const vue = (l) => {
+    const r = scenario(s, l, maxLev);
+    if (!r) return `<p class="small muted" data-lev-vue="${l}" ${l === c.lev ? "" : "hidden"}>Stop manquant : calcul impossible.</p>`;
+    const ex = (x) => (x == null ? "—" : eur((10 * x) / 100, true));
+    return `<div data-lev-vue="${l}" ${l === c.lev ? "" : "hidden"}>
+      <dl class="setup-chiffres">
+        ${chiffre("Si ça rate", "−" + p1(r.perte), "perte", r.liqAvant ? "⚠ liquidé avant le stop" : "de ta mise, le stop coupe")}
+        ${chiffre("Objectif 1", r.tp1 != null ? "+" + p1(r.tp1) : "—", "gain", "de ta mise (30 % encaissés)")}
+        ${chiffre("Si tout réussit", r.tout != null ? "+" + p1(r.tout) : "—", "gain", "de ta mise, après frais")}
+      </dl>
+      <p class="small muted">Ex. avec 10 € de mise à x${l} (position de ${eur(10 * l)}) : ${ex(-r.perte)} · ${ex(r.tp1)} · ${ex(r.tout)}.
+        ${l > c.lev ? " Plus de levier = position plus grosse pour la même mise : la perte au stop grossit aussi." : ""}</p>
+    </div>`;
+  };
+  return `<div class="lev-bloc">
+    <div class="lev-choix" role="group" aria-label="Voir les chiffres avec un autre levier">
+      ${levs.map((l) => `<button type="button" class="btn mini ${l === c.lev ? "actif" : "discret"}" data-lev-pick="${l}" aria-pressed="${l === c.lev}">x${l}${l === c.lev ? " ★" : ""}</button>`).join("")}
+    </div>
+    ${levs.map(vue).join("")}
+    <p class="small muted">★ conseillé : avec une mise d'environ ${c.misePct ? p1(Math.min(100, c.misePct)) : "—"} de ton solde à x${c.lev},
+      le stop te coûte ≈ ${p1(+me.risk_pct || 1)} du solde (ta règle).</p>
+  </div>`;
+}
+
+// Boutons de levier des cartes : on affiche les chiffres du levier choisi (aucun calcul réseau).
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest?.("[data-lev-pick]");
+    if (!b) return;
+    const bloc = b.closest(".lev-bloc");
+    bloc.querySelectorAll("[data-lev-pick]").forEach((x) => {
+      const on = x === b;
+      x.classList.toggle("actif", on); x.classList.toggle("discret", !on); x.setAttribute("aria-pressed", on);
+    });
+    bloc.querySelectorAll("[data-lev-vue]").forEach((v) => { v.hidden = v.dataset.levVue !== b.dataset.levPick; });
+  });
+}
+
+/** Pastille d'état de la carte, mise à jour avec le prix (validé → SL touché / TP1 touché…). */
+export function etat(s, ph) {
+  if (ph?.code === "stop") return ["short", "❌ SL touché"];
+  if (ph?.code === "tp") return ["long", `🎯 TP${ph.tp} touché`];
+  if (ph?.code === "parti") return ["", "trop tard"];
+  if (ph?.code === "expire") return ["", "expiré"];
+  return s.status === "WATCH" ? ["ambre", "🟡 à surveiller"] : ["long", "🟢 validé"];
+}
+
+export function planTable(s, lev = null) {
   const e = (+s.entry_low + +s.entry_high) / 2;
   const d = (x) => (x == null ? "" : `<span>${(((+x - e) / e) * 100 > 0 ? "+" : "")}${(((+x - e) / e) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %</span>`);
   const rows = [
     ["Entrer", `${pq(+s.entry_low, s.quote)} – ${pq(+s.entry_high, s.quote)}`, "ordre limite dans la zone"],
+    ...(lev ? [["Levier", `x${lev}`, lev === 1 ? "sans levier" : "marge isolée (conseillé)"]] : []),
     ["Stop", pq(+s.sl, s.quote), d(s.sl)],
     ["Objectif 1", pq(+s.tp1, s.quote), `${d(s.tp1)} · encaisser 30 %`],
     ["Objectif 2", pq(+s.tp2, s.quote), `${d(s.tp2)} · encaisser 40 %`],
@@ -170,27 +312,28 @@ export const LEGENDE = `<p class="legende small">
   <span><i class="k-obj"></i>objectifs</span><span><i class="k-ok"></i>scénario prévu</span><span><i class="k-rate"></i>si ça rate</span></p>`;
 
 /** Carte complète (accueil). Le graphique et le feu sont remplis en direct par live.js. */
-export function setupCard(s, me) {
+export function setupCard(s, me, maxLev = 10) {
   const L = isLong(s);
   const watch = s.status === "WATCH";
-  const expired = s.expires_at && new Date(s.expires_at) < new Date();
+  const [ek, et] = etat(s, s.expires_at && new Date(s.expires_at) < new Date() ? { code: "expire" } : null);
   return `<article class="setup ${L ? "long" : "short"}${watch ? " watch" : ""}" data-sig="${esc(s.id)}">
     <header class="setup-tete">
       <span class="sens-badge">${L ? "↑ LONG" : "↓ SHORT"}</span>
       <div class="setup-nom"><h3>${esc(s.display)}</h3>
         <span class="small muted">${esc(CLASSE[s.asset_class] || "")} · détecté ${ago(s.created_at)}</span></div>
-      ${watch ? '<span class="pastille ambre">🟡 à surveiller</span>' : expired ? '<span class="pastille">expiré</span>' : '<span class="pastille long">🟢 validé</span>'}
+      <span class="pastille ${ek}" data-etat>${et}</span>
     </header>
     ${confiance(s)}
     <p class="setup-idee">${idee(s)}</p>
     <div class="feu" data-phase><span class="feu-icone">…</span><div><strong>Lecture du prix Kraken…</strong></div></div>
     <div class="setup-graph" data-chart aria-label="Graphique 15 minutes de ${esc(s.display)} avec le plan du bot"></div>
     ${LEGENDE}
-    ${chiffres(s, me)}
-    <details class="plan"><summary>Le plan en détail</summary>${planTable(s)}
+    ${levierBadge(s, me, maxLev)}
+    ${chiffres(s, me, maxLev)}
+    <details class="plan"><summary>Le plan en détail</summary>${planTable(s, levierConseille(s, me, maxLev).lev)}
       ${watch && s.trigger_text ? `<p class="small"><b>Condition attendue :</b> ${esc(s.trigger_text)}</p>` : ""}
       <p class="small muted">Stratégie : ${esc(STRAT[s.strategy] || s.strategy)}.
       Le tracé pointillé montre le plan du bot, pas une prédiction : le marché peut faire autre chose.</p></details>
-    <a class="btn ${watch ? "" : "principal"} pleine" href="#/signal/${esc(s.id)}">${watch ? "Préparer ce trade" : "Voir le trade et calculer ma taille"}</a>
+    <a class="btn ${watch ? "" : "principal"} pleine" href="#/signal/${esc(s.id)}">${watch ? "Préparer ce trade" : "Voir le trade et choisir ma quantité"}</a>
   </article>`;
 }

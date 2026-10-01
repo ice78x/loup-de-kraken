@@ -14,13 +14,14 @@ test("prix spot + futures + taux EUR/USD", async () => {
     calls.push(u);
     if (u.includes("/Ticker") && u.includes("EURUSD")) return reply({ error: [], result: { ZEURZUSD: { a: ["1.10"], b: ["1.10"], c: ["1.10"] } } });
     if (u.includes("/Ticker")) return reply({ error: [], result: { XXBTZEUR: { a: ["101"], b: ["99"], c: ["100"], o: "98", h: ["1", "105"], l: ["1", "95"] } } });
-    if (u.includes("/tickers")) return reply({ tickers: [{ symbol: "PF_SOLUSD", last: 150, bid: 149.9, ask: 150.1, markPrice: 150 }] });
+    if (u.includes("/tickers")) return reply({ tickers: [{ symbol: "PF_SOLUSD", last: 150, bid: 149.9, ask: 150.1, markPrice: 150, open24h: 140 }] });
     return reply({}, 404);
   };
   const r = await market(new Request("https://x/api/market?type=prices&spot=XXBTZEUR&fut=PF_SOLUSD&fx=1"));
   const b = await r.json();
   assert.equal(b.spot.XXBTZEUR.last, 100);
   assert.equal(b.futures.PF_SOLUSD.last, 150);
+  assert.equal(b.futures.PF_SOLUSD.open, 140);
   assert.ok(Math.abs(b.eur_per_usd - 1 / 1.1) < 1e-9);
 });
 

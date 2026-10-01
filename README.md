@@ -151,10 +151,11 @@ L'icône du loup apparaît sur ton écran, comme une vraie app.
 
 | Page | Ce qu'on y fait |
 |---|---|
-| **Accueil** | Le verdict du bot (🟢 trade validé / 🟡 à surveiller / 🛑 on attend), ton solde, ton risque disponible, les news importantes, le bouton **Scanner maintenant** |
+| **Accueil** | Le verdict du bot (🟢 trade validé / 🟡 à surveiller / 🛑 on attend), mis à jour en direct (**SL touché** / **TP1 touché**), chaque setup avec son **levier conseillé** et ses résultats en **% de ta mise**, ton solde, les news, le bouton **Scanner maintenant** |
+| **Graphiques** | Toutes les paires Kraken Pro France en 3 onglets (cryptos / xStocks / matières premières). Chaque paire : graphique en direct (5 min → 1 jour), outils d'analyse expliqués (EMA, volume, supports/résistances, structure HH/HL, RSI, VWAP), lecture rapide, signaux du bot et trades du club sur cette paire |
 | **Signal** | Le graphique, l'échelle de prix (SL, entrée, TP à leur vraie distance), le plan en clair, **Prendre ce trade**, et comment le passer dans l'app Kraken |
 | **Mes trades** | Tes trades en cours (gain ou perte en direct, conseil du bot), ton historique, tes statistiques. Tu peux encaisser une partie, déplacer le SL ou clôturer |
-| **Trade manuel** | Tu choisis l'actif, le sens, l'entrée, le SL, les TP et le **multiplicateur** : le site calcule la bonne taille |
+| **Trade manuel** | Comme sur Kraken : l'actif (menu déroulant), le sens, la **quantité**, le type d'ordre (limite / marché), le **levier**, le SL et les TP. Le site affiche la marge isolée, la perte au stop ou à la liquidation, les gains et les **frais Kraken réels** |
 | **Le club** | Classement (en R, pour être juste entre petits et gros soldes), trades de tout le monde, page de chaque membre |
 | **Idées** | Formulaire pour proposer une amélioration : elle arrive directement chez l'admin, qui répond |
 | **Le bot** (admin) | Comment il décide, ses résultats historiques, ses réglages. Lien dans Mon compte, réservé à l'admin |
@@ -164,6 +165,9 @@ L'icône du loup apparaît sur ton écran, comme une vraie app.
 **Paires en dollars.** Le bot ne propose que des paires cotées en **USD** (BTC/USD, ETH/USD, xStocks…), comme sur ton compte.
 Ton solde et ton risque restent en **euros** : le site convertit avec le taux EUR/USD de Kraken du moment.
 Pour autoriser aussi les paires en euros : page **Le bot → Paires analysées**.
+
+**Frais.** Le site utilise la grille officielle Kraken Pro (niveau d'entrée, vérifiée le 01/10/2026) : futures 0,02 % (limite) / 0,05 % (marché),
+xStocks 0 % / 0,10 % (0,08 % dès le 05/10/2026), stablecoins 0,20 %, spot crypto 0,40 % / 0,80 %. Fichiers : `site/js/fees.js` et `bot/src/kraken_assistant/risk/fees.py`.
 
 **Paper ou réel ?** À chaque trade enregistré, tu choisis :
 - **Paper (entraînement)** : le bot le suit tout seul sur les vrais prix Kraken. Il encaisse les TP, coupe au SL, et remonte le SL quand c'est confirmé.

@@ -11,6 +11,8 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   - `js/sizing.js` : calcul de position (miroir de `bot/src/kraken_assistant/risk/position_sizing.py`). Toute modification = mettre à jour les deux + tests.
   - `vendor/` : bibliothèques intégrées (supabase-js, lightweight-charts v5). Ne pas ajouter de CDN pour le JS.
   - `css/app.css` : jetons de design dans `:root` (bleu abyssal + ambre ; vert/rouge réservés gains/pertes et LONG/SHORT).
+  - Pages clés : `views/home.js` (accueil + cartes setup de `setup.js`, mises à jour par `live.js`), `views/markets.js` (Graphiques : liste en onglets),
+    `views/chart.js` (graphique d'une paire, indicateurs de `indicators.js`), `views/tradeform.js` (formulaire de trade, quantité + levier).
 - `netlify/functions/` : `market.mjs` (proxy des prix publics Kraken), `scan.mjs` (déclenche le workflow GitHub `scan`).
 - `supabase/schema.sql` : schéma + RLS. **Idempotent** (relançable) : utiliser `create ... if not exists`, `alter table ... add column if not exists`,
   `create or replace`. Les politiques RLS sont recréées à chaque exécution.
@@ -24,6 +26,9 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
 2. **Aucun ordre réel** envoyé depuis le site ou le cloud. Pas de clé API Kraken stockée côté serveur. (`live_trading` forcé à false dans `cloud/run.py`.)
 3. **Risque** : taille = risque € / (|entrée − SL| + frais). Le multiplicateur (levier) est choisi APRÈS et ne change jamais la perte au SL.
    1 % par trade (max 2 %), 2 % de risque ouvert cumulé, stop des nouveaux trades à −3 % sur la journée.
+   Côté site, le membre choisit la **quantité** (comme sur Kraken, marge isolée) : le site montre la perte au SL / à la liquidation avant d'enregistrer.
+   Levier conseillé (`levierConseille` dans `site/js/setup.js`) : liquidation ≥ 2× plus loin que le stop, et mise de 25 % du solde ≈ risque habituel.
+   Frais : grille Kraken dans `site/js/fees.js` ⇄ `bot/src/kraken_assistant/risk/fees.py` (à garder identiques, avec la date de vérification).
 4. Jamais « trade sûr », « gain garanti », « aucun risque », « machine à cash ».
 5. La clé Supabase secrète (`sb_secret_…`, ou l'ancienne `service_role`) ne va **que** dans les secrets GitHub. Le site n'utilise que la clé publique
    (`sb_publishable_…` / `anon`) + RLS. Les clés `sb_` ne sont pas des JWT : jamais dans `Authorization: Bearer` (voir `cloud/supabase_rest.py`).

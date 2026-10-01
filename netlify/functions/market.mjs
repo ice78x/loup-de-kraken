@@ -44,7 +44,10 @@ async function prices(q) {
   if (fut.length) jobs.push(fetch(`${FUT}/derivatives/api/v3/tickers`).then((r) => r.json()).then((b) => {
     for (const t of b.tickers || []) {
       const s = String(t.symbol || "").toUpperCase();
-      if (fut.includes(s) && !t.suspended) out.futures[s] = { last: +t.last, bid: +t.bid, ask: +t.ask, mark: +t.markPrice };
+      if (fut.includes(s) && !t.suspended) {
+        const n = (v) => (Number.isFinite(+v) && +v > 0 ? +v : null);
+        out.futures[s] = { last: +t.last, bid: +t.bid, ask: +t.ask, mark: +t.markPrice, open: n(t.open24h), high24: n(t.high24h), low24: n(t.low24h) };
+      }
     }
   }));
   if (q.get("fx")) jobs.push(kraken("/Ticker", { pair: "EURUSD" }).then((r) => {

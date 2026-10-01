@@ -51,15 +51,27 @@ function sig(id, display, direction, status, seed, price, score, strategy, extra
 export function demoBackend() {
   const me = { id: "demo-me", pseudo: "Ice", balance_eur: 90, risk_pct: 1, max_open_risk_pct: 2,
     max_daily_loss_pct: 3, approved: true, is_admin: true, created_at: ago(240) };
+  const hist = [{ created_at: ago(24), old_balance: 80, new_balance: 90 }];
   const members = [me,
     { id: "demo-2", pseudo: "Nora", approved: true, is_admin: false, created_at: ago(200), balance_eur: 150 },
-    { id: "demo-3", pseudo: "Sam", approved: true, is_admin: false, created_at: ago(100), balance_eur: 60 },
+    { id: "demo-3", pseudo: "Sam", pseudo_pending: "Samy", approved: true, is_admin: false, created_at: ago(100), balance_eur: 60 },
     { id: "demo-4", pseudo: "Léo", approved: false, is_admin: false, created_at: ago(2), balance_eur: 90 }];
   const signals = [
     sig(11, "BTC/USD", "LONG", "TRADE", 7, 71000, 72, "cassure_retest"),
     sig(12, "LINK/USD", "SHORT", "TRADE", 21, 16.5, 64, "rejet_sweep"),
     sig(13, "ETH/USD", "LONG", "WATCH", 33, 2800, 55, "tendance_pullback"),
     sig(14, "PAXG/USD", "LONG", "WATCH", 41, 2650, 48, "cassure_retest", { asset_class: "commodity" }),
+  ];
+  // Paires fictives (démo) : celles des signaux + quelques autres pour la page Graphiques.
+  const inst = (display, asset_class, demo_price, extra = {}) => ({ key: `spot:${display.replace("/", "")}`, display, venue: "spot",
+    api_symbol: display.replace("/", ""), base: display.split("/")[0], asset_class, quote: "USD", can_long: true, can_short: true,
+    max_leverage: 5, lot_decimals: 8, ordermin: 0, demo_price, ...extra });
+  const insts = [
+    ...signals.map((s) => inst(s.display, s.asset_class, s.candles.at(-1)[4])),
+    inst("SOL/USD", "crypto", 160), inst("XRP/USD", "crypto", 0.62), inst("DOGE/USD", "crypto", 0.15),
+    inst("TSLAx/USD", "xstock", 245, { api_asset_class: "tokenized_asset", max_leverage: 1, can_short: false }),
+    inst("NVDAx/USD", "xstock", 128, { api_asset_class: "tokenized_asset", max_leverage: 1, can_short: false }),
+    { ...inst("PF_XBTUSD", "crypto", 71000), key: "futures:PF_XBTUSD", venue: "futures", api_symbol: "PF_XBTUSD", base: "BTC", max_leverage: 10 },
   ];
   const scan = {
     id: 1, created_at: ago(0.4), mode: "normal", verdict: "TRADE", duration_s: 96,
@@ -87,11 +99,11 @@ export function demoBackend() {
       fee_pct: 0.4, status: "ouvert", tp1_hit: true, tp2_hit: false, tp3_hit: false, realized_pnl_eur: 0.9,
       advice: "DÉPLACER SL → SL 160.7 — TP1 pris + 2 clôtures 15m confirmées → SL à break-even (DÉMO)",
       opened_at: ago(5), events: [{ at: ago(5), text: "Ouverture" }, { at: ago(2), by: "bot", text: "TP1 atteint à 164.1" }], auto_track: true },
-    { id: tid++, user_id: "demo-me", profiles: { pseudo: "Ice" }, instrument_key: "spot:XETHZUSD", display: "ETH/USD", quote: "USD", venue: "spot",
+    { id: tid++, user_id: "demo-me", profiles: { pseudo: "Ice" }, instrument_key: "spot:ETHUSD", display: "ETH/USD", quote: "USD", venue: "spot",
       direction: "SHORT", mode: "reel", entry_price: 2850, sl: 2885, tp1: 2805, tp2: 2770, tp3: 2725, leverage: 2, qty: 0.028,
       qty_remaining: 0, risk_eur: 0.9, eur_per_quote: 1, fee_pct: 0.4, status: "clos", realized_pnl_eur: 1.46, r_multiple: 1.62,
       close_reason: "TP3", opened_at: ago(50), closed_at: ago(40), events: [] },
-    { id: tid++, user_id: "demo-2", profiles: { pseudo: "Nora" }, instrument_key: "spot:XXBTZUSD", display: "BTC/USD", quote: "USD", venue: "spot",
+    { id: tid++, user_id: "demo-2", profiles: { pseudo: "Nora" }, instrument_key: "spot:BTCUSD", display: "BTC/USD", quote: "USD", venue: "spot",
       direction: "LONG", mode: "paper", entry_price: 70000, sl: 69200, tp1: 71000, tp2: 71900, tp3: 72800, leverage: 3,
       qty: 0.0021, qty_remaining: 0, risk_eur: 1.5, eur_per_quote: 1, fee_pct: 0.4, status: "clos", realized_pnl_eur: -1.5,
       r_multiple: -1, close_reason: "SL", opened_at: ago(30), closed_at: ago(28), events: [] },
@@ -125,23 +137,29 @@ export function demoBackend() {
     signOut: () => { session = null; listeners.forEach((l) => l(null)); return ok({}); },
     token: () => ok("demo"),
     me: () => ok(me),
-    updateMe: (_id, patch) => { Object.assign(me, patch); return ok(me); },
+    updateMe: (_id, patch) => {
+      if (patch.balance_eur != null && +patch.balance_eur !== +me.balance_eur) hist.unshift({ created_at: now(), old_balance: me.balance_eur, new_balance: patch.balance_eur });
+      Object.assign(me, patch); return ok(me);
+    },
     members: () => ok(members),
     setMember: (id, patch) => { Object.assign(members.find((m) => m.id === id), patch); return ok({}); },
     removeMember: (id) => { members.splice(members.findIndex((m) => m.id === id), 1); return ok({}); },
-    balanceHistory: () => ok([{ created_at: ago(24), old_balance: 80, new_balance: 90 }]),
+    balanceHistory: () => ok(hist),
     latestScan: () => ok(scan),
     signalsOf: () => ok(signals),
     signal: (id) => ok(signals.find((s) => s.id === +id) || null),
     recentSignals: () => ok(signals.filter((s) => s.status === "TRADE")),
-    instruments: () => ok(signals.map((s) => ({ key: s.instrument_key, display: s.display, venue: "spot", api_symbol: s.api_symbol,
-      asset_class: s.asset_class, quote: "USD", can_long: true, can_short: true, max_leverage: 5, lot_decimals: 8, ordermin: 0 }))),
+    instruments: () => ok(insts),
+    instrumentsByKeys: (keys) => ok(insts.filter((i) => keys.includes(i.key))),
+    instrument: (key) => ok(insts.find((i) => i.key === key) || null),
+    signalsFor: (key) => ok(signals.filter((s) => s.instrument_key === key)),
     edges: () => ok([{ asset_class: "crypto", strategy: "cassure_retest", status: "non démontré", oos_trades: 0, period: "DÉMO" }]),
     settings: () => ok(settings),
     setSetting: (key, value) => { settings.find((s) => s.key === key).value = value; return ok({}); },
     settingsLog: () => ok([{ key: "score_trade", old_value: 55, new_value: 60, created_at: ago(12), profiles: { pseudo: "Nora" } }]),
     requestScan: () => ok("DÉMO : en vrai, le scan est lancé sur GitHub et le résultat arrive en 2 à 4 minutes."),
-    trades: ({ userId, status } = {}) => ok(trades.filter((t) => (!userId || t.user_id === userId) && (!status || t.status === status))),
+    trades: ({ userId, status, instrumentKey } = {}) => ok(trades.filter((t) => (!userId || t.user_id === userId) && (!status || t.status === status)
+      && (!instrumentKey || t.instrument_key === instrumentKey))),
     trade: (id) => ok(trades.find((t) => t.id === +id)),
     createTrade: (row) => { const t = { id: tid++, user_id: "demo-me", profiles: { pseudo: me.pseudo }, opened_at: now(), status: "ouvert", tp1_hit: false, tp2_hit: false, tp3_hit: false, ...row }; trades.unshift(t); return ok(t); },
     updateTrade: (id, patch) => { const t = trades.find((x) => x.id === +id); Object.assign(t, patch); return ok(t); },

@@ -1,21 +1,29 @@
 // Mon compte : pseudo, solde (modifiable à tout moment), risque, historique du solde, et gestion des membres (admin).
 import { backend, DEMO } from "../data.js";
 import { ago, busy, dt, esc, eur, num, toast } from "../ui.js";
+import { majSolde } from "../solde.js";
 import { CATEGORIES, STATUTS } from "./ideas.js";
 
 export async function render(main, ctx) {
+  if (!ctx.me.solde) await majSolde(ctx, backend).catch(() => {});
   const me = ctx.me;
+  const s = me.solde;
   const [hist, members, ideas] = await Promise.all([backend.balanceHistory(me.id), me.is_admin ? backend.members() : Promise.resolve([]),
     me.is_admin ? backend.ideas().catch(() => []) : Promise.resolve([])]);
   const unseen = ideas.filter((i) => !i.seen).length;
   const pending = members.filter((m) => !m.approved);
+  const renames = members.filter((m) => m.approved && m.pseudo_pending && m.id !== me.id);
   main.innerHTML = `
     <h1>Mon compte</h1>
     <form class="bloc form" id="me">
       <div class="deux">
-        <label class="champ"><span>Pseudo</span><input name="pseudo" required maxlength="30" value="${esc(me.pseudo)}"></label>
-        <label class="champ"><span>Mon solde (€)</span><input name="balance" inputmode="decimal" value="${me.balance_eur}">
-          <small>Mets ton solde réel Kraken (ou ton capital d'entraînement). Change-le quand tu veux.</small></label>
+        <label class="champ"><span>Pseudo</span><input name="pseudo" required minlength="2" maxlength="30" value="${esc(me.pseudo)}">
+          <small>${me.is_admin ? "Tu es admin : ton pseudo change tout de suite."
+            : me.pseudo_pending ? `⏳ Demande envoyée : « ${esc(me.pseudo_pending)} », en attente de validation par l'admin. <button type="button" class="btn mini discret" id="annule-pseudo">Annuler</button>`
+            : "Un changement de pseudo est envoyé à l'admin, qui le valide."}</small></label>
+        <label class="champ"><span>Mon solde (€)</span><input name="balance" inputmode="decimal" value="${(+me.balance_eur).toFixed(2)}">
+          <small>Il bouge tout seul avec tes trades${s ? ` (${eur(s.realise, true)} depuis le ${dt(s.since).split(" ")[0]}, sur un départ de ${eur(s.base)})` : ""}.
+            Corrige-le ici après un dépôt, un retrait, ou pour l'aligner sur Kraken : on repart de cette valeur.</small></label>
       </div>
       <div class="trois">
         <label class="champ"><span>Risque par trade (%)</span><input name="risk" inputmode="decimal" value="${me.risk_pct}"><small>Conseillé : 1 %${me.guardrails === false ? "" : ". Maximum 2 %"}.</small></label>
@@ -26,7 +34,7 @@ export async function render(main, ctx) {
         <input type="checkbox" name="guardrails" ${me.guardrails === false ? "" : "checked"}>
         <span><b>Garde-fous du club</b> — bloque les trades au-delà de 2 % de risque, au-delà de ton risque cumulé,
           après ta perte max du jour, ou si la liquidation arrive avant ton stop.
-          <span class="muted">Coupés : rien n'est bloqué, le site t'avertit seulement. Le stop loss reste demandé pour pouvoir suivre ton trade.</span></span>
+          <span class="muted">Coupés : rien n'est bloqué, le site t'avertit seulement.</span></span>
       </label>
       <p class="small muted" style="margin:0">Exemple : avec ${eur(+me.balance_eur)} et ${me.risk_pct} %, tu risques ${eur((me.balance_eur * me.risk_pct) / 100)} par trade.
         Ne monte jamais ton risque parce que tu peux redéposer de l'argent.</p>
@@ -52,6 +60,12 @@ export async function render(main, ctx) {
       <p class="small"><a href="#/bot">⚙️ Réglages et résultats du bot (réservé admin) →</a></p>
     </section>
 
+    ${renames.length ? `<section class="section" id="pseudos"><h2>✏️ Changements de pseudo <span class="pastille ambre">${renames.length}</span></h2>
+      <div class="pile">${renames.map((m) => `<div class="bloc ligne entre">
+        <span><b>${esc(m.pseudo)}</b> veut s'appeler <b>${esc(m.pseudo_pending)}</b></span>
+        <span class="ligne"><button class="btn principal mini" data-pseudo-ok="${m.id}">Accepter</button>
+          <button class="btn danger mini" data-pseudo-non="${m.id}">Refuser</button></span></div>`).join("")}</div></section>` : ""}
+
     <section class="section"><h2>Membres ${pending.length ? `<span class="pastille ambre">${pending.length} en attente</span>` : ""}</h2>
       <p class="muted">Envoie l'adresse du site à tes amis. Après leur inscription, approuve-les ici.</p>
       <div class="table-wrap"><table><thead><tr><th>Membre</th><th>Inscrit</th><th>Statut</th><th></th></tr></thead><tbody>
@@ -69,14 +83,22 @@ export async function render(main, ctx) {
   main.querySelector("#me").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = e.target;
-    const patch = { pseudo: f.pseudo.value.trim(), balance_eur: num(f.balance.value), risk_pct: num(f.risk.value),
+    const nom = f.pseudo.value.trim();
+    if (nom.length < 2 || nom.length > 30) return toast("Le pseudo doit faire entre 2 et 30 caractères.", true);
+    const renomme = nom !== me.pseudo;
+    // Membre : le nouveau pseudo part en demande chez l'admin. Admin : changement direct.
+    const patch = { ...(me.is_admin ? { pseudo: nom } : renomme ? { pseudo_pending: nom } : {}), balance_eur: num(f.balance.value), risk_pct: num(f.risk.value),
       max_open_risk_pct: num(f.open.value), max_daily_loss_pct: num(f.day.value), guardrails: f.guardrails.checked };
     const lim = patch.guardrails ? { risk: 2, open: 5, day: 10 } : { risk: 100, open: 100, day: 100 };
     if (!(patch.balance_eur >= 0)) return toast("Solde invalide.", true);
     if (!(patch.risk_pct > 0 && patch.risk_pct <= lim.risk)) return toast(`Le risque par trade doit être entre 0,1 et ${lim.risk} %.`, true);
     if (!(patch.max_open_risk_pct > 0 && patch.max_open_risk_pct <= lim.open)) return toast(`Risque ouvert max : entre 0,1 et ${lim.open} %.`, true);
     if (!(patch.max_daily_loss_pct > 0 && patch.max_daily_loss_pct <= lim.day)) return toast(`Perte max du jour : entre 0,1 et ${lim.day} %.`, true);
-    busy(e.submitter, async () => { ctx.me = await backend.updateMe(me.id, patch); toast("Compte mis à jour."); render(main, ctx); });
+    busy(e.submitter, async () => {
+      ctx.me = await backend.updateMe(me.id, patch);
+      delete ctx.me.balance_base; delete ctx.me.solde; // le solde saisi devient le nouveau point de départ
+      toast(renomme && !me.is_admin ? "Compte mis à jour. Ton nouveau pseudo est envoyé à l'admin pour validation." : "Compte mis à jour."); render(main, ctx);
+    });
   });
   main.querySelectorAll("form[data-idea]").forEach((f) => f.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -90,6 +112,18 @@ export async function render(main, ctx) {
     busy(b, async () => { await backend.deleteIdea(+b.dataset.delIdea); render(main, ctx); });
   }));
   main.querySelector("#logout").addEventListener("click", () => backend.signOut());
+  main.querySelector("#annule-pseudo")?.addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    ctx.me = await backend.updateMe(me.id, { pseudo_pending: null });
+    toast("Demande de pseudo annulée."); render(main, ctx);
+  }));
+  main.querySelectorAll("[data-pseudo-ok]").forEach((b) => b.addEventListener("click", () => busy(b, async () => {
+    const m = members.find((x) => x.id === b.dataset.pseudoOk);
+    await backend.setMember(m.id, { pseudo: m.pseudo_pending, pseudo_pending: null });
+    toast(`${m.pseudo} s'appelle maintenant ${m.pseudo_pending}.`); render(main, ctx);
+  })));
+  main.querySelectorAll("[data-pseudo-non]").forEach((b) => b.addEventListener("click", () => busy(b, async () => {
+    await backend.setMember(b.dataset.pseudoNon, { pseudo_pending: null }); toast("Changement de pseudo refusé."); render(main, ctx);
+  })));
   main.querySelectorAll("[data-approve]").forEach((b) => b.addEventListener("click", () => busy(b, async () => {
     await backend.setMember(b.dataset.approve, { approved: true }); toast("Membre approuvé."); render(main, ctx); })));
   main.querySelectorAll("[data-admin]").forEach((b) => b.addEventListener("click", () => busy(b, async () => {

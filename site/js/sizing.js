@@ -39,7 +39,7 @@ export function planTrade(p) {
   const errors = checkLevels(direction, p.entry, p.sl, tps);
   const warnings = [];
   const lev = Math.round(p.leverage || 1);
-  if (!(p.sl > 0)) errors.push("Le mode automatique calcule la taille à partir du stop : indique un stop, ou choisis la quantité toi-même.");
+  if (!(p.sl > 0)) errors.push("Pour calculer une taille à partir du risque, il faut un stop.");
   if (!(p.balance > 0)) errors.push("Ton solde doit être supérieur à 0 € (modifie-le dans Mon compte).");
   if (!(p.riskPct > 0)) errors.push("Le risque par trade doit être supérieur à 0 %.");
   if (lev < 1 || lev > 10) errors.push("Le multiplicateur doit être entre x1 et x10.");
@@ -61,8 +61,9 @@ export function planTrade(p) {
   const notionalEur = qty * p.entry * p.eurPerQuote;
   const marginEur = notionalEur / lev;
   const slPct = (dist / p.entry) * 100;
-  if (lev > 1 && slPct > 50 / lev) {
-    (p.strict === false ? warnings : errors).push(`Avec x${lev}, la liquidation (≈ ${(100 / lev).toFixed(0)} % de mouvement) arriverait trop près de ton SL (${slPct.toFixed(1)} %). Baisse le multiplicateur.`);
+  const liqPct = liqFraction(lev, p.venue || "futures", p.maxLev || 10) * 100;
+  if (lev > 1 && liqPct < 2 * slPct) {
+    (p.strict === false ? warnings : errors).push(`Avec x${lev}, la liquidation (≈ ${liqPct.toFixed(1).replace(".", ",")} % de mouvement) arriverait trop près de ton SL (${slPct.toFixed(1).replace(".", ",")} %). Baisse le levier.`);
   }
   if (marginEur > p.balance + 1e-9) {
     const need = Math.ceil(notionalEur / p.balance);
@@ -88,14 +89,25 @@ export function planTrade(p) {
   };
 }
 
-/** Distance (en fraction du prix) à laquelle Kraken liquide une position isolée : ≈ 80 % de la marge consommée (prudent). */
-export const liqFraction = (lev) => 0.8 / Math.max(1, lev);
+/**
+ * Distance (en fraction du prix) à laquelle Kraken liquide une position ISOLÉE (approximation, prix de référence = « mark price ») :
+ * - Futures perpétuels (clients EEE) : liquidation quand marge + perte latente < marge de maintenance,
+ *   et la marge de maintenance = moitié de la marge initiale minimale (10 % pour un contrat à x10 max → 5 % de la position).
+ *   Donc distance ≈ 1/levier − 0,5/levier max du contrat. Ex. x10 → 5 %, x5 → 15 %, x3 → 28 %.
+ * - Spot sur marge : liquidation à 40 % de « margin level » → on perd 60 % de la marge → distance ≈ 0,6/levier.
+ * Sources : support.kraken.com (Perpetual contract specifications for clients in the EEA ; Margin call level and margin liquidation level).
+ */
+export function liqFraction(lev, venue = "futures", maxLev = 10) {
+  const l = Math.max(1, +lev || 1);
+  if (venue === "futures") return Math.max(0.005, 1 / l - 0.5 / Math.max(1, +maxLev || 10));
+  return 0.6 / l;
+}
 
 /** Prix de liquidation approximatif d'une position isolée (null : LONG spot sans levier, jamais liquidé). */
-export function liquidationPrice(direction, entry, lev, venue = "spot") {
+export function liquidationPrice(direction, entry, lev, venue = "spot", maxLev = 10) {
   if (!(entry > 0)) return null;
   if (direction === "LONG" && lev <= 1 && venue === "spot") return null;
-  const d = liqFraction(lev);
+  const d = liqFraction(lev, venue, maxLev);
   return direction === "LONG" ? entry * (1 - d) : entry * (1 + d);
 }
 
@@ -142,7 +154,7 @@ export function planFromQty(p) {
   const notionalEur = notionalQuote * fx;
   const marginEur = notionalEur / lev;
   const entryFeeEur = fe * p.entry * qty * fx;
-  const liqPrice = liquidationPrice(direction, p.entry, lev, p.venue || "spot");
+  const liqPrice = liquidationPrice(direction, p.entry, lev, p.venue || "spot", p.maxLev || 10);
   // Perte max en marge isolée : toute la marge du trade + frais d'entrée. Jamais plus.
   const capEur = marginEur + entryFeeEur;
   let lossAtSlEur, slPct, dist, liqBeforeSl = false;

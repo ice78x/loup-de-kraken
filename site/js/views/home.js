@@ -4,6 +4,7 @@ import { ladder } from "../ladder.js";
 import { goLive } from "../live.js";
 import { PROCHE_PCT, SEUIL_SOLIDE, espace, ordre, setupCard } from "../setup.js";
 import { riskBudget } from "../sizing.js";
+import { soldeBloc, soldeLive } from "../solde.js";
 import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast } from "../ui.js";
 
 const VERDICT = {
@@ -54,9 +55,15 @@ export function newsBlock(n) {
 
 export async function render(main, ctx) {
   const me = ctx.me;
-  const [scan, mine, newIdeas] = await Promise.all([backend.latestScan(), backend.trades({ userId: me.id, limit: 300 }),
-    me.is_admin ? backend.unseenIdeas().catch(() => 0) : Promise.resolve(0)]);
+  const [scan, mine, newIdeas, membres] = await Promise.all([backend.latestScan(), backend.trades({ userId: me.id, limit: 300 }),
+    me.is_admin ? backend.unseenIdeas().catch(() => 0) : Promise.resolve(0),
+    me.is_admin ? backend.members().catch(() => []) : Promise.resolve([])]);
+  const aValider = membres.filter((m) => !m.approved).length;
+  const pseudos = membres.filter((m) => m.approved && m.pseudo_pending && m.id !== me.id).length;
   const sigs = scan ? await backend.signalsOf(scan.id) : [];
+  // Levier maximum Kraken de chaque paire (pour le levier conseillé).
+  const maxLev = new Map((await backend.instrumentsByKeys([...new Set(sigs.map((s) => s.instrument_key))]).catch(() => []))
+    .map((i) => [i.key, +i.max_leverage || 1]));
   const trades = sigs.filter((s) => s.status === "TRADE");
   const watch = sigs.filter((s) => s.status === "WATCH");
   const budget = riskBudget(me, mine);
@@ -65,18 +72,20 @@ export async function render(main, ctx) {
   const icon = scan?.verdict === "TRADE" ? "🟢" : scan?.verdict === "WATCH" ? "🟡" : "🛑";
 
   main.innerHTML = `
+    ${aValider || pseudos ? `<a class="alerte lien-alerte" href="#/compte">👤 À valider :
+      ${[aValider ? `<b>${aValider} nouveau${aValider > 1 ? "x" : ""} membre${aValider > 1 ? "s" : ""}</b>` : "", pseudos ? `<b>${pseudos} changement${pseudos > 1 ? "s" : ""} de pseudo</b>` : ""].filter(Boolean).join(" et ")} → Mon compte</a>` : ""}
     ${newIdeas ? `<a class="alerte lien-alerte" href="#/compte">💡 <b>${newIdeas} nouvelle${newIdeas > 1 ? "s" : ""} idée${newIdeas > 1 ? "s" : ""}</b> d'amélioration reçue${newIdeas > 1 ? "s" : ""} → Mon compte</a>` : ""}
     <section class="verdict">
       <img src="img/logo.svg" alt="">
       <div>
-        <h1>${scan ? icon + " " : ""}${esc(titre)}</h1>
-        <p>${esc(sous)}</p>
+        <h1 id="verdict-titre">${scan ? icon + " " : ""}${esc(titre)}</h1>
+        <p id="verdict-sous">${esc(sous)}</p>
         <p class="small">${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)}) · ` : ""}prochain vers ${nextScan()}</p>
       </div>
     </section>
 
     <dl class="chiffres">
-      <div><dt>Ton solde</dt><dd class="num">${eur(+me.balance_eur)}</dd></div>
+      ${soldeBloc(me)}
       <div><dt>Risque par trade</dt><dd class="num">${eur((me.balance_eur * me.risk_pct) / 100)}</dd></div>
       <div><dt>Risque encore disponible</dt><dd class="num">${eur(budget.available)}</dd></div>
       <div><dt>Résultat du jour</dt><dd class="num ${cls(budget.todayPnl)}">${eur(budget.todayPnl, true)}</dd></div>
@@ -112,18 +121,19 @@ export async function render(main, ctx) {
       <div class="grille setups" data-esp="fragile"></div>
       <p class="vide-espace small muted" data-vide="fragile">Aucun.</p>
     </section>
-    <details class="section espace" id="esp-fini"><summary><h2 style="display:inline">Ratés, trop tard ou expirés</h2>
+    <details class="section espace" id="esp-fini"><summary><h2 style="display:inline">Terminés : SL touché, objectif atteint ou expirés</h2>
       <span class="muted small" data-compte="fini"></span></summary>
-      <p class="muted">Le prix a touché le stop, a déjà atteint l'objectif 1 sans nous, ou les niveaux sont trop anciens. On n'y entre plus.</p>
+      <p class="muted">Le prix a touché le stop, a déjà atteint un objectif, ou les niveaux sont trop anciens. On n'y entre plus
+        (si tu es déjà dedans, suis ton trade dans « Mes trades »).</p>
       <div class="grille setups" data-esp="fini"></div>
     </details>
-    <div id="cartes-attente" hidden>${[...sigs].sort(ordre).map((s) => setupCard(s, me)).join("")}</div>` : ""}
+    <div id="cartes-attente" hidden>${[...sigs].sort(ordre).map((s) => setupCard(s, me, maxLev.get(s.instrument_key) ?? 10)).join("")}</div>` : ""}
 
     ${scan && !trades.length && (scan.reasons || []).length ? `<section class="section"><h2>Pourquoi pas de trade</h2>
       <div class="bloc"><ul>${scan.reasons.slice(0, 5).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div></section>` : ""}
 
     ${scan?.opportunities?.length ? `<section class="section"><div class="ligne entre"><h2 style="margin:0">Marchés analysés ce scan</h2>
-      <a href="#/marches">Voir toutes les paires Kraken Pro France →</a></div>
+      <a href="#/graphiques">Tous les graphiques Kraken Pro France →</a></div>
       <div class="ligne">${scan.opportunities.slice(0, 40).map((o) => {
         const k = o.state === "LONG" ? "long" : o.state === "SHORT" ? "short" : o.state.startsWith("SURV") ? "ambre" : "";
         return `<span class="pastille ${k}" title="score ${o.score ?? "—"}">${esc(o.display)} · ${esc(o.state === "WAIT" ? "attendre" : o.state.toLowerCase())}</span>`;
@@ -137,9 +147,25 @@ export async function render(main, ctx) {
       <ul>${scan.data_issues.slice(0, 12).map((d) => `<li class="small">${esc(d)}</li>`).join("")}</ul></details></section>` : ""}
   `;
 
+  // Verdict en haut : si les trades validés ont déjà touché leur stop ou un objectif, on le dit (au lieu de « 1 trade validé »).
+  const phases = new Map();
+  const majVerdict = () => {
+    if (!trades.length || trades.some((s) => !phases.has(s.id))) return;
+    const actifs = trades.filter((s) => !["stop", "tp", "parti", "expire"].includes(phases.get(s.id).code));
+    const h1 = main.querySelector("#verdict-titre"), p = main.querySelector("#verdict-sous");
+    if (actifs.length) {
+      h1.textContent = `🟢 ${actifs.length} trade${actifs.length > 1 ? "s" : ""} validé${actifs.length > 1 ? "s" : ""}${actifs.length < trades.length ? " encore ouvert" + (actifs.length > 1 ? "s" : "") : ""}`;
+      return;
+    }
+    const fin = (s) => { const ph = phases.get(s.id); return ph.code === "stop" ? `❌ SL touché · ${s.display}` : ph.code === "tp" ? `🎯 TP${ph.tp} touché · ${s.display}` : `${s.display} : ${ph.titre.toLowerCase()}`; };
+    h1.textContent = trades.length === 1 ? fin(trades[0]) : `Les ${trades.length} trades validés sont terminés`;
+    p.textContent = (trades.length > 1 ? trades.map(fin).join(" · ") + ". " : "") + "On n'y entre plus : attends le prochain scan. Si tu es dans le trade, suis-le dans « Mes trades ».";
+  };
+
   // Rangement des cartes : par confiance d'abord, puis « imminent » / « fini » dès que le prix Kraken est lu.
   const where = new Map();
   const ranger = (s, ph) => {
+    if (ph) { phases.set(s.id, ph); majVerdict(); }
     const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
     const esp = espace(s, ph);
     if (!card || where.get(s.id) === esp) return;
@@ -162,10 +188,12 @@ export async function render(main, ctx) {
     main.querySelector("#cartes-attente").remove();
     const stop = goLive(sigs.map((s) => {
       const card = main.querySelector(`[data-sig="${CSS.escape(String(s.id))}"]`);
-      return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]") };
+      // Trades validés : bougies chargées tout de suite (même hors écran) pour savoir si le SL ou un objectif a été touché.
+      return { s, chartEl: card.querySelector("[data-chart]"), phaseEl: card.querySelector("[data-phase]"), etatEl: card.querySelector("[data-etat]"), eager: s.status === "TRADE" };
     }), { onPhase: ranger, bars: 32 });
     ctx.onLeave(stop);
   }
 
+  ctx.onLeave(soldeLive(main, me));
   main.querySelector("#scan-now").addEventListener("click", (e) => busy(e.currentTarget, async () => toast(await backend.requestScan())));
 }

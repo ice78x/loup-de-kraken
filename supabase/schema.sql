@@ -32,6 +32,12 @@ alter table public.profiles add constraint profiles_max_open_risk_pct_check chec
 alter table public.profiles drop constraint if exists profiles_max_daily_loss_pct_check;
 alter table public.profiles add constraint profiles_max_daily_loss_pct_check check (max_daily_loss_pct > 0 and max_daily_loss_pct <= 100);
 
+-- Changement de pseudo : le membre fait une demande (pseudo_pending), l'admin la valide.
+alter table public.profiles add column if not exists pseudo_pending text;
+alter table public.profiles drop constraint if exists profiles_pseudo_pending_check;
+alter table public.profiles add constraint profiles_pseudo_pending_check
+  check (pseudo_pending is null or char_length(trim(pseudo_pending)) between 2 and 30);
+
 create table if not exists public.balance_history (
   id          bigint generated always as identity primary key,
   user_id     uuid not null references public.profiles(id) on delete cascade,
@@ -75,6 +81,9 @@ begin
   if auth.uid() is not null and not public.is_admin()
      and (new.approved is distinct from old.approved or new.is_admin is distinct from old.is_admin) then
     raise exception 'Seul un administrateur peut approuver un membre';
+  end if;
+  if auth.uid() is not null and not public.is_admin() and new.pseudo is distinct from old.pseudo then
+    raise exception 'Le changement de pseudo doit être validé par un administrateur';
   end if;
   if new.balance_eur is distinct from old.balance_eur then
     insert into public.balance_history (user_id, old_balance, new_balance)

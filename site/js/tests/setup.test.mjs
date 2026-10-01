@@ -1,7 +1,7 @@
-// Logique des cartes « setup » : feu (où en est le prix), scénario dessiné, gains en €.
+// Logique des cartes « setup » : feu (où en est le prix), SL/TP touchés, scénario dessiné, levier conseillé, % de la mise.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { espace, gains, minutesToClose, ordre, phase, projection } from "../setup.js";
+import { espace, etat, levierConseille, minutesToClose, ordre, phase, projection, scenario, touches } from "../setup.js";
 
 const NOW = Date.UTC(2026, 9, 1, 12, 7);
 const futur = new Date(NOW + 3600e3).toISOString();
@@ -23,7 +23,7 @@ test("stop touché avant l'entrée = annulé ; objectif 1 déjà atteint = trop 
   assert.equal(phase(short, 103.2, { now: NOW }).code, "stop");
   assert.equal(phase(short, 97.5, { now: NOW }).code, "parti");
   assert.equal(phase(long, 97.9, { now: NOW }).code, "stop");
-  assert.equal(phase(long, 103.5, { now: NOW }).code, "parti");
+  assert.equal(phase(long, 103.5, { now: NOW }).code, "tp");            // trade validé : « TP1 touché »
 });
 test("LONG validé dans la zone = feu vert ; au-dessus = attendre le retour ; entre zone et stop = prudence", () => {
   assert.equal(phase(long, 100.5, { now: NOW }).code, "go");
@@ -49,14 +49,54 @@ test("scénario : part du prix actuel, passe par la zone puis les objectifs ; un
   assert.equal(p.rate.at(-1).value, 103);               // le chemin « si ça rate » finit au stop
   assert.deepEqual(projection(short, []), { ok: [], rate: [] });
 });
-test("gains en € : risque du membre, TP 30/40/30, R nets si disponibles", () => {
-  const g = gains({ rr: [1, 2, 3] }, { balance_eur: 90, risk_pct: 1 });
-  assert.equal(g.risk, 0.9);
-  assert.ok(Math.abs(g.tp1 - 0.27) < 1e-9);
-  assert.ok(Math.abs(g.all - 0.9 * (0.3 + 0.8 + 0.9)) < 1e-9);
-  assert.equal(g.net, false);
-  assert.equal(gains({ rr: [1, 2, 3], rr_net: [0.8, 1.7, 2.6] }, { balance_eur: 90, risk_pct: 1 }).net, true);
-  assert.equal(gains({}, { balance_eur: 90, risk_pct: 1 }).all, null);
+test("historique : SL touché / TP touché d'après les bougies depuis la détection (pas seulement le prix actuel)", () => {
+  const t0 = Math.floor(NOW / 1000 / 900) * 900;
+  const created = new Date(NOW).toISOString();
+  const bar = (i, h, l) => [t0 + i * 900, 100, h, l, (h + l) / 2];
+  const lg = { ...long, created_at: created };                      // LONG validé : entrée 100-101, SL 98, TP 103/105/107
+  assert.equal(touches(lg, [bar(1, 101, 99.5), bar(2, 103.2, 100)]).hit, "tp1");
+  assert.equal(touches(lg, [bar(1, 103.2, 100), bar(2, 101, 97.5)]).hit, "sl");     // TP1 puis stop
+  assert.equal(touches(lg, [bar(1, 103.2, 100), bar(2, 101, 97.5)]).tpAvant, 1);
+  assert.equal(touches(lg, [bar(1, 103.5, 97.5)]).hit, "sl");                        // même bougie : prudence, on compte le stop
+  assert.equal(touches(lg, [bar(0, 110, 90)]).hit, null);                           // bougie de détection ignorée
+  // Le prix est revenu dans la zone, mais le stop a été touché entre-temps : la carte doit le dire.
+  const ph = phase(lg, 100.5, { now: NOW + 3 * 900e3, candles: [bar(1, 101, 97.5), bar(2, 101, 100)] });
+  assert.equal(ph.code, "stop");
+  assert.equal(ph.titre, "SL touché");
+  assert.deepEqual(etat(lg, ph), ["short", "❌ SL touché"]);
+  const ph2 = phase(lg, 104, { now: NOW + 2 * 900e3, candles: [bar(1, 103.3, 100.2), bar(2, 104, 103)] });
+  assert.equal(ph2.titre, "TP1 touché");
+  assert.equal(espace(lg, ph2), "fini");
+  // Setup à surveiller : objectif atteint sans entrée confirmée = trop tard
+  const sw = { ...short, created_at: created };
+  assert.equal(phase(sw, 97.5, { now: NOW + 2 * 900e3, candles: [bar(1, 99.5, 97.8)] }).code, "parti");
+});
+
+test("levier conseillé : liquidation loin du stop, mise de 25 % ≈ ton risque, SHORT spot x2 minimum", () => {
+  // SL à 2 % : 1 % de risque / (25 % × ~3,2 % avec frais spot) ≈ x1
+  const l = levierConseille({ ...long, entry_low: 100, entry_high: 100, sl: 98, venue: "spot" }, { risk_pct: 1 });
+  assert.equal(l.lev, 1);
+  // Futures, stop serré 0,5 % : ≈ x7, liquidation à ~11 % (bien après le stop)
+  const f = levierConseille({ ...long, entry_low: 100, entry_high: 100, sl: 99.5, venue: "futures" }, { risk_pct: 1 });
+  assert.equal(f.lev, 7);
+  assert.ok(f.liqPct > 2 * f.slPct);
+  assert.ok(Math.abs(f.misePct - 25) < 4);
+  // Plafond de la paire
+  assert.equal(levierConseille({ ...long, entry_low: 100, entry_high: 100, sl: 99.5, venue: "futures" }, { risk_pct: 1 }, 3).lev, 3);
+  // SHORT spot : Kraken impose x2 minimum
+  assert.ok(levierConseille({ ...short, venue: "spot", sl: 110 }, { risk_pct: 1 }).lev >= 2);
+});
+
+test("scénario en % de la mise : le levier multiplie gains ET pertes ; liquidation avant le stop = toute la mise", () => {
+  const s = { ...long, entry_low: 100, entry_high: 100, sl: 98, tp1: 103, tp2: 105, tp3: 107, venue: "futures" };
+  const x1 = scenario(s, 1), x3 = scenario(s, 3);
+  assert.ok(Math.abs(x1.perte - (2 + 0.02 + 0.05)) < 1e-9);
+  assert.ok(Math.abs(x3.perte - 3 * x1.perte) < 1e-9);
+  assert.ok(Math.abs(x3.tout - 3 * x1.tout) < 1e-9);
+  assert.ok(Math.abs(x1.tp1 - 0.3 * (3 - 0.04)) < 1e-9);
+  const x50 = scenario(s, 50);                                     // liquidation à 1,6 % < stop à 2 %
+  assert.equal(x50.liqAvant, true);
+  assert.equal(x50.perte, 100);
 });
 
 test("rangement : imminent si dans la zone ou à ≤ 0,5 % ; sinon selon la confiance ; raté/trop tard/expiré à part", () => {

@@ -13,7 +13,7 @@ const MAX_RISK_PCT = 2;
 /**
  * @param host élément où afficher le formulaire
  * @param o { me, trades (du membre), inst {display, venue, api_symbol, api_asset_class, asset_class, quote, instrument_key,
- *            can_short, max_leverage, lot_decimals, ordermin}, signal?, price?, eurPerQuote, go }
+ *            can_short, max_leverage, lot_decimals, ordermin}, signal?, price?, eurPerQuote, levRef? (levier conseillé), go }
  * Frais : grille Kraken selon le marché (fees.js), sauf si o.feeTaker / o.feeMaker sont fournis.
  */
 export function tradeForm(host, o) {
@@ -63,8 +63,8 @@ export function tradeForm(host, o) {
     </div>
 
     <label class="champ"><span>Levier : <b id="lev-v">x1</b></span>
-      <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${dir0 === "SHORT" && (o.inst.venue || "spot") === "spot" ? Math.min(2, maxLev) : 1}">
-      <small>Le levier réduit la marge bloquée et rapproche la liquidation. Il ne change <b>pas</b> ta perte au SL.</small></label>
+      <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${o.levRef ? Math.min(maxLev, o.levRef) : dir0 === "SHORT" && (o.inst.venue || "spot") === "spot" ? Math.min(2, maxLev) : 1}">
+      <small>${o.levRef ? `Levier conseillé pour ce trade : <b>x${o.levRef}</b>. ` : ""}Pour une même quantité, le levier réduit la marge bloquée et rapproche la liquidation ; il ne change <b>pas</b> ta perte au SL.</small></label>
 
     <label class="champ"><span>Stop loss (SL) — facultatif</span><input name="sl" inputmode="decimal" value="${r6(s?.sl)}" placeholder="aucun">
       <small>Là où tu coupes si ça va mal. Sans stop, tu peux perdre la marge du trade (liquidation), jamais plus.</small></label>
@@ -85,7 +85,7 @@ export function tradeForm(host, o) {
 
   const f = host.querySelector("form");
   let plan = null;
-  let userTouchedLev = false;
+  let userTouchedLev = !!o.levRef; // levier conseillé par le bot : on le garde tel quel
   let lastEdited = "qty"; // quantité ou montant : le dernier champ tapé fait foi
 
   const v = (n) => num(f.elements[n].value);
@@ -93,7 +93,7 @@ export function tradeForm(host, o) {
   const base = () => ({
     direction: f.elements.dir.value, entry: v("entry"), sl: v("sl"), tps: [v("tp1"), v("tp2"), v("tp3")].filter((x) => x != null),
     balance: +o.me.balance_eur, feeTaker: fees.taker, feeMaker: fees.maker, entryIsMaker: orderType() === "limit",
-    eurPerQuote: o.eurPerQuote, lotDecimals: o.inst.lot_decimals ?? 8, ordermin: o.inst.ordermin || 0, venue: o.inst.venue || "spot",
+    eurPerQuote: o.eurPerQuote, lotDecimals: o.inst.lot_decimals ?? 8, ordermin: o.inst.ordermin || 0, venue: o.inst.venue || "spot", maxLev: +o.inst.max_leverage || 10,
     usedMarginEur: usedMarginEur(o.trades),
   });
 

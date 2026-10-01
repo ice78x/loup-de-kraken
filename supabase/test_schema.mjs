@@ -97,5 +97,14 @@ await as(U1, "update public.ideas set status = 'en cours', seen = true, admin_re
 assert.equal((await as(U2, "select admin_reply from public.ideas")).rows[0].admin_reply, "Bonne idée");
 await fails(as(U2, "insert into public.ideas (title, admin_reply) values ('Triche', 'auto')"), /row-level security/);
 await fails(as(U2, "update public.profiles set is_admin = true where id = $1", [U2]), /administrateur/);
+// Pseudo : le membre demande, l'admin valide
+await fails(as(U2, "update public.profiles set pseudo = 'Hacker' where id = $1", [U2]), /validé par un administrateur/);
+await as(U2, "update public.profiles set pseudo_pending = 'Bob' where id = $1", [U2]);
+assert.equal((await as(U2, "select pseudo, pseudo_pending from public.profiles where id = $1", [U2])).rows[0].pseudo, "b");
+await as(U1, "update public.profiles set pseudo = pseudo_pending, pseudo_pending = null where id = $1", [U2]);
+assert.equal((await as(U2, "select pseudo from public.profiles where id = $1", [U2])).rows[0].pseudo, "Bob");
+await as(U1, "update public.profiles set pseudo = 'Ice2' where id = $1", [U1]); // l'admin change le sien directement
+await fails(as(U2, "update public.profiles set pseudo_pending = 'x' where id = $1", [U2]), /check/);
+console.log("✓ pseudo : demande du membre, validation par l'admin");
 console.log("✓ boîte à idées privée : le membre voit les siennes, l'admin les reçoit toutes et répond");
 console.log("\nSCHÉMA OK");

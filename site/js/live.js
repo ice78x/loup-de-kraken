@@ -4,12 +4,12 @@
 import { setupChart } from "./charts.js";
 import { DEMO } from "./data.js";
 import { ohlc, prices } from "./market.js";
-import { phase, phaseHtml, projection } from "./setup.js";
+import { etat, phase, phaseHtml, projection } from "./setup.js";
 
 const TICK_MS = 30_000;
 
 /**
- * items : [{ s, chartEl, phaseEl, noteEl? }] — un par signal affiché.
+ * items : [{ s, chartEl, phaseEl, noteEl?, etatEl?, eager? }] — un par signal affiché (eager : bougies chargées même hors écran).
  * opts.interactive / opts.bars passés au graphique. Retourne une fonction d'arrêt.
  */
 export function goLive(items, { interactive = false, bars = 48, onPhase = null } = {}) {
@@ -43,6 +43,8 @@ export function goLive(items, { interactive = false, bars = 48, onPhase = null }
     x.phaseEl.className = `feu ${ph.ton}`;
     x.phaseEl.innerHTML = phaseHtml(ph);
     x.ph = ph;
+    const badge = x.etatEl ?? x.phaseEl.closest("article, main")?.querySelector("[data-etat]");
+    if (badge) { const [k, t] = etat(x.s, ph); badge.className = `pastille ${k}`; badge.textContent = t; }
     onPhase?.(x.s, ph);
     if (x.chart && x.candles?.length) x.chart.setProjection(projection(x.s, x.candles, x.price));
   }
@@ -83,7 +85,7 @@ export function goLive(items, { interactive = false, bars = 48, onPhase = null }
         if (x.visible && !x.candles) load(x);
       }
     }, { rootMargin: "200px" });
-    st.forEach((x) => io.observe(x.chartEl));
+    st.forEach((x) => { io.observe(x.chartEl); if (x.eager) load(x); });
   } else {
     st.forEach(load);
   }

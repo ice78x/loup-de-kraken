@@ -2,6 +2,7 @@
 import { backend } from "../data.js";
 import { prices } from "../market.js";
 import { pnlBreakdown } from "../sizing.js";
+import { soldeBloc, soldeLive } from "../solde.js";
 import { STRAT, cls, dt, esc, eur, pct, pq, px, rr } from "../ui.js";
 
 export function stats(list) {
@@ -64,11 +65,13 @@ export async function render(main, ctx) {
   const done = mine.filter((t) => t.status !== "ouvert");
   main.innerHTML = `
     <div class="ligne entre"><h1 style="margin:0">Mes trades</h1><a class="btn principal" href="#/trade/nouveau">Trade manuel</a></div>
+    <dl class="chiffres">${soldeBloc(ctx.me)}</dl>
     ${statsBlock(stats(mine))}
     <section class="section"><h2>En cours (${open.length})</h2>
       <div id="open" class="grille">${open.length ? "" : '<div class="vide"><strong>Aucun trade en cours</strong>Prends un signal 🟢 depuis l\'accueil ou crée un trade manuel.</div>'}</div>
       <p class="small muted" id="px-note"></p></section>
     <section class="section"><h2>Historique</h2>${historyTable(done)}</section>`;
+  ctx.onLeave(soldeLive(main, ctx.me));
   if (!open.length) return;
   const box = main.querySelector("#open");
   const refresh = async () => {

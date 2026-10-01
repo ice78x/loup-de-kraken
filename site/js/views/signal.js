@@ -1,7 +1,7 @@
 // Détail d'un signal : graphique, échelle de prix, explications simples, formulaire pour le prendre.
 import { backend } from "../data.js";
 import { goLive } from "../live.js";
-import { LEGENDE, chiffres, idee, planTable } from "../setup.js";
+import { LEGENDE, chiffres, etat, idee, levierBadge, levierConseille, planTable } from "../setup.js";
 import { eurPerQuote, krakenLink, prices } from "../market.js";
 import { STRAT, ago, dt, esc, pq, px } from "../ui.js";
 import { tradeForm } from "./tradeform.js";
@@ -10,7 +10,10 @@ import { newsBlock } from "./home.js";
 export async function render(main, ctx, id) {
   const s = await backend.signal(id);
   if (!s) { main.innerHTML = '<div class="vide"><strong>Signal introuvable</strong>Il a peut-être été supprimé (plus de 60 jours).</div>'; return; }
-  const [mine, px0] = await Promise.all([backend.trades({ userId: ctx.me.id, limit: 300 }), prices([s])]);
+  const [mine, px0, known] = await Promise.all([backend.trades({ userId: ctx.me.id, limit: 300 }), prices([s]),
+    backend.instrument(s.instrument_key).catch(() => null)]);
+  const maxLev = known ? +known.max_leverage || 1 : 10;
+  const lev = levierConseille(s, ctx.me, maxLev).lev;
   const live = px0.get(s);
   const price = live?.last ?? null;
   const expired = s.expires_at && new Date(s.expires_at) < new Date();
@@ -21,8 +24,7 @@ export async function render(main, ctx, id) {
     <a href="#/" class="muted small">← Accueil</a>
     <div class="ligne entre" style="margin-top:8px">
       <h1 style="margin:0"><span class="${dir === "long" ? "gain" : "perte"}">${s.direction === "LONG" ? "LONG ↑" : "SHORT ↓"}</span> ${esc(s.display)}</h1>
-      ${s.status === "TRADE" ? (expired ? '<span class="pastille">expiré : ne plus entrer sans nouveau scan</span>' : '<span class="pastille long">🟢 trade validé</span>')
-        : '<span class="pastille ambre">🟡 à surveiller : pas encore d\'entrée</span>'}
+      <span class="pastille ${etat(s, expired ? { code: "expire" } : null)[0]}" data-etat>${etat(s, expired ? { code: "expire" } : null)[1]}</span>
     </div>
     <p class="muted">${esc(STRAT[s.strategy] || s.strategy)} · score ${Math.round(s.score)}/100 · détecté ${ago(s.created_at)} (${dt(s.created_at)})
       ${price ? ` · prix actuel <b class="num">${pq(price, s.quote)}</b>` : px0.error ? ` · prix en direct indisponible` : ""}</p>
@@ -37,9 +39,10 @@ export async function render(main, ctx, id) {
       le marché peut faire autre chose. C'est le stop qui limite la perte.</p></figure>
 
     <section class="section grille">
-      <div class="bloc pile"><h2>Ce que tu risques, ce que tu peux gagner</h2>${chiffres(s, ctx.me)}
-        <p class="small muted">Calculé avec ton solde et ton risque par trade (page Mon compte), objectifs encaissés 30 / 40 / 30 %.</p></div>
-      <div class="bloc pile"><h2>Les niveaux</h2>${planTable(s)}</div>
+      <div class="bloc pile"><h2>Ce que tu risques, ce que tu peux gagner</h2>${levierBadge(s, ctx.me, maxLev)}${chiffres(s, ctx.me, maxLev)}
+        <p class="small muted">En % de ta <b>mise</b> (l'argent bloqué sur le trade), frais Kraken compris, objectifs encaissés 30 / 40 / 30 %.
+          Touche un autre levier pour voir l'effet.</p></div>
+      <div class="bloc pile"><h2>Les niveaux</h2>${planTable(s, lev)}</div>
     </section>
 
     <section class="section grille">
@@ -74,8 +77,8 @@ export async function render(main, ctx, id) {
           <li>Ouvre l'app <b>Kraken</b> et passe en mode <b>Pro</b>.</li>
           <li>Cherche <b>${esc(s.display)}</b>.</li>
           <li>Choisis <b>${s.direction === "LONG" ? "Acheter" : "Vendre"}</b>, type d'ordre <b>Limite</b>, prix dans la zone d'entrée.</li>
-          <li>Entre la <b>quantité</b> calculée ici (pas un montant au hasard).</li>
-          ${s.direction === "SHORT" ? "<li>Un SHORT se fait avec de la marge (levier) : choisis le même multiplicateur qu'ici.</li>" : ""}
+          <li>Entre la <b>quantité</b> choisie ici, après avoir vérifié ta perte au stop (pas un montant au hasard).</li>
+          <li>Levier : <b>x${lev}</b>${lev > 1 ? " en marge <b>isolée</b>" : " (pas de levier)"}${s.direction === "SHORT" && (s.venue || "spot") === "spot" ? " — un SHORT en spot demande au moins x2" : ""}.</li>
           <li>Ajoute tout de suite un ordre <b>stop-loss</b> à ${pq(s.sl, s.quote)}, puis tes ordres limite de sortie aux TP.</li>
           <li>Reviens ici et enregistre le trade en mode <b>Réel</b> pour le suivre.</li>
         </ol>
@@ -88,9 +91,7 @@ export async function render(main, ctx, id) {
 
   const inst = { instrument_key: s.instrument_key, display: s.display, venue: s.venue, api_symbol: s.api_symbol,
     api_asset_class: s.api_asset_class, asset_class: s.asset_class, quote: s.quote, can_short: true, max_leverage: 10 };
-  const insts = await backend.instruments().catch(() => []);
-  const known = insts.find((i) => i.key === s.instrument_key);
   if (known) Object.assign(inst, { base: known.base, can_short: known.can_short, max_leverage: known.max_leverage || 1, lot_decimals: known.lot_decimals, ordermin: known.ordermin });
   // Frais : grille officielle Kraken selon le marché (fees.js).
-  tradeForm(main.querySelector("#form"), { me: ctx.me, trades: mine, inst, signal: s, price, eurPerQuote: epq, go: ctx.go });
+  tradeForm(main.querySelector("#form"), { me: ctx.me, trades: mine, inst, signal: s, price, eurPerQuote: epq, levRef: lev, go: ctx.go });
 }

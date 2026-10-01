@@ -3,12 +3,14 @@
 // puis l'ajouter dans ROUTES et, si besoin, dans NAV.
 import { backend, DEMO } from "./data.js";
 import { esc, toast } from "./ui.js";
+import { majSolde } from "./solde.js";
 import * as home from "./views/home.js";
 import * as signal from "./views/signal.js";
 import * as trades from "./views/trades.js";
 import * as trade from "./views/trade.js";
 import * as newtrade from "./views/newtrade.js";
 import * as markets from "./views/markets.js";
+import * as chart from "./views/chart.js";
 import * as club from "./views/club.js";
 import * as bot from "./views/bot.js";
 import * as ideas from "./views/ideas.js";
@@ -22,20 +24,23 @@ const I = {
   club: '<circle cx="9" cy="8" r="3.2"/><circle cx="17" cy="9" r="2.4"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M15 15.2c.6-.2 1.3-.3 2-.3 2.6 0 4 1.7 4 4.6"/>',
   bot: '<rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/>',
   idea: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1v.5h5V16c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  chart: '<path d="M4 20V4M4 20h16"/><path d="M8 15l3-4 3 2 5-6"/>',
   learn: '<path d="M3 6l9-3 9 3-9 3zM7 8v5c0 1.7 2.2 3 5 3s5-1.3 5-3V8"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/>',
 };
 const icon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>`;
 
 const NAV = [
-  ["#/", "home", "Accueil"], ["#/trades", "trades", "Mes trades"], ["#/club", "club", "Le club"],
+  // [lien, icône, libellé, libellé court pour la barre d'onglets du téléphone]
+  ["#/", "home", "Accueil"], ["#/graphiques", "chart", "Graphiques"], ["#/trades", "trades", "Mes trades", "Trades"], ["#/club", "club", "Le club", "Club"],
   ["#/idees", "idea", "Idées"], ["#/apprendre", "learn", "Apprendre"],
 ];
 const ROUTES = [
   [/^#?\/?$/, home, "#/"], [/^#\/signal\/(\d+)$/, signal, "#/"], [/^#\/trades$/, trades, "#/trades"],
-  [/^#\/trade\/nouveau$/, newtrade, "#/trades"], [/^#\/trade\/(\d+)$/, trade, "#/trades"],
+  [/^#\/trade\/nouveau$/, newtrade, "#/trades"], [/^#\/trade\/nouveau\/(.+)$/, newtrade, "#/trades"], [/^#\/trade\/(\d+)$/, trade, "#/trades"],
   [/^#\/club$/, club, "#/club"], [/^#\/membre\/([\w-]+)$/, club, "#/club"], [/^#\/bot$/, bot, "#/compte"], [/^#\/idees$/, ideas, "#/idees"],
-  [/^#\/apprendre$/, learn, "#/apprendre"], [/^#\/marches$/, markets, "#/"], [/^#\/compte$/, account, "#/compte"],
+  [/^#\/apprendre$/, learn, "#/apprendre"], [/^#\/(?:marches|graphiques)$/, markets, "#/graphiques"],
+  [/^#\/graphiques\/(\w+)$/, markets, "#/graphiques"], [/^#\/graphique\/(.+)$/, chart, "#/graphiques"], [/^#\/compte$/, account, "#/compte"],
 ];
 
 const ctx = {
@@ -50,6 +55,7 @@ const banner = DEMO ? '<div class="demo-banner">Mode démo : données fictives. 
 
 function shell() {
   const links = NAV.map(([h, ic, label]) => `<a href="${h}" data-nav="${h}">${icon(ic)}<span>${label}</span></a>`).join("");
+  const tabs = NAV.map(([h, ic, label, court]) => `<a href="${h}" data-nav="${h}">${icon(ic)}<span>${court || label}</span></a>`).join("");
   return `${banner}
   <div class="shell">
     <aside class="sidebar">
@@ -62,7 +68,7 @@ function shell() {
       <a class="btn discret" href="#/compte" aria-label="Mon compte">${icon("user")}</a>
     </header>
     <main id="main" tabindex="-1"></main>
-    <nav class="tabbar" aria-label="Navigation">${links}</nav>
+    <nav class="tabbar" aria-label="Navigation">${tabs}</nav>
   </div>`;
 }
 
@@ -76,6 +82,8 @@ async function route() {
     try { await ctx.refreshMe(); } catch (e) { toast(e.message, true); }
   }
   if (!ctx.me?.approved) { root.innerHTML = banner + '<div id="main"></div>'; return auth.renderPending(document.getElementById("main"), ctx); }
+  // Solde à jour avec les gains/pertes des trades (recalculé à chaque page, rien n'est modifié dans la base).
+  try { await majSolde(ctx, backend); } catch { /* on garde le solde enregistré */ }
   if (!document.querySelector(".shell")) root.innerHTML = shell();
   const hash = location.hash || "#/";
   const match = ROUTES.find(([re]) => re.test(hash));

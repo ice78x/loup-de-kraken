@@ -13,7 +13,17 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-LIQ_SAFETY = 0.5  # le SL doit se trouver avant la moitié de la distance de liquidation approx. (1/levier)
+LIQ_SAFETY = 0.5  # le SL doit se trouver avant la moitié de la distance de liquidation
+
+
+def liq_fraction(lev: float, venue: str = "futures", max_lev: float = 10) -> float:
+    """Distance (fraction du prix) de liquidation d'une position isolée, règles Kraken (miroir de site/js/sizing.js) :
+    - futures perpétuels EEE : marge de maintenance = moitié de la marge initiale minimale → 1/levier − 0,5/levier max ;
+    - spot sur marge : liquidation à 40 % de margin level → 0,6/levier."""
+    lev = max(1.0, float(lev or 1))
+    if venue == "futures":
+        return max(0.005, 1 / lev - 0.5 / max(1.0, float(max_lev or 10)))
+    return 0.6 / lev
 
 
 @dataclass
@@ -121,8 +131,11 @@ def compute_position(p: SizingInput) -> PositionPlan:
     if not allowed:
         return PositionPlan(False, ["aucun levier autorisé pour cette direction"], warnings, risk_amount_eur=risk_eur)
 
-    # Levier max "sûr" : liquidation approx. à 1/levier, le SL doit être bien avant.
-    max_safe = max(1, int(math.floor(LIQ_SAFETY / sl_frac))) if sl_frac > 0 else p.max_leverage
+    # Levier max "sûr" : la liquidation (règles Kraken) doit rester au moins 2× plus loin que le SL.
+    max_safe = 1
+    for lv in range(1, int(p.max_leverage) + 1):
+        if sl_frac <= 0 or liq_fraction(lv, p.venue, p.max_leverage) * LIQ_SAFETY >= sl_frac:
+            max_safe = lv
     safe_allowed = [lv for lv in allowed if lv == 1 or lv <= max_safe]
     if not safe_allowed:
         return PositionPlan(False, [f"SL trop large ({sl_frac*100:.1f} %) pour les leviers disponibles "

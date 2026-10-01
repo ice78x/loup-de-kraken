@@ -7,7 +7,7 @@ import { tradeForm } from "./tradeform.js";
 
 const CLASSE = { crypto: "crypto", xstock: "action", commodity: "matière première" };
 
-export async function render(main, ctx) {
+export async function render(main, ctx, preKey = null) {
   const [insts, mine] = await Promise.all([backend.instruments(), backend.trades({ userId: ctx.me.id, limit: 300 })]);
   main.innerHTML = `
     <a href="#/trades" class="muted small">← Mes trades</a>
@@ -21,7 +21,7 @@ export async function render(main, ctx) {
           <span class="fleche" aria-hidden="true">▾</span></div>
           <div id="choix" class="menu" role="listbox" hidden></div>
         </div>
-        <small>${insts.length ? `${insts.length} paires disponibles en France, lues chez Kraken · <a href="#/marches">voir la liste</a>` : "La liste arrive après le premier scan du bot."}</small>
+        <small>${insts.length ? `${insts.length} paires disponibles en France, lues chez Kraken · <a href="#/graphiques">voir les graphiques</a>` : "La liste arrive après le premier scan du bot."}</small>
       </div>
       <div id="form" style="margin-top:16px"></div>
     </div>`;
@@ -64,6 +64,10 @@ export async function render(main, ctx) {
     // Remonte le champ en haut de l'écran pour que le menu reste visible au-dessus du clavier du téléphone.
     setTimeout(() => dd.scrollIntoView({ block: "start", behavior: "smooth" }), 250);
   };
+
+  // Arrivée depuis un graphique (« Trader cette paire ») : la paire est déjà choisie.
+  const pre = preKey && insts.find((i) => i.key === decodeURIComponent(preKey));
+  if (pre) pick(pre);
 
   q.addEventListener("focus", open);
   q.addEventListener("click", () => { if (list.hidden) open(); });

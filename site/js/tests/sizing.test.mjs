@@ -153,7 +153,9 @@ test("marge isolée : stop facultatif, perte max = marge, marge libre respectée
   assert.equal(p.ok, true);
   assert.equal(p.hasSl, false);
   assert.ok(Math.abs(p.lossAtSlEur - 20) < 1e-9);
-  assert.ok(Math.abs(p.liqPrice - 84) < 1e-9);
+  assert.ok(Math.abs(p.liqPrice - 88) < 1e-9);            // spot sur marge : liquidation à 40 % de margin level → −12 % à x5
+  const fut = planFromQty({ ...base, venue: "futures", sl: null, qty: 1, leverage: 5 });
+  assert.ok(Math.abs(fut.liqPrice - 85) < 1e-9);          // futures EEE : 1/5 − 5 % de maintenance = −15 %
   assert.ok(p.warnings.some((w) => /liquidation/.test(w)));
   // Stop au-delà de la liquidation : perte plafonnée à la marge
   const loin = planFromQty({ ...base, sl: 70, qty: 1, leverage: 5 });

@@ -30,7 +30,7 @@ function supabaseBackend() {
       return uid ? q(sb.from("profiles").select("*").eq("id", uid).single()) : null;
     },
     updateMe: async (id, patch) => q(sb.from("profiles").update(patch).eq("id", id).select().single()),
-    members: () => q(sb.from("profiles").select("id,pseudo,approved,is_admin,created_at,balance_eur").order("created_at")),
+    members: () => q(sb.from("profiles").select("id,pseudo,pseudo_pending,approved,is_admin,created_at,balance_eur").order("created_at")),
     setMember: (id, patch) => q(sb.from("profiles").update(patch).eq("id", id)),
     removeMember: (id) => q(sb.from("profiles").delete().eq("id", id)),
     balanceHistory: (id) => q(sb.from("balance_history").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(20)),
@@ -49,6 +49,11 @@ function supabaseBackend() {
       }
       return out.sort((a, b) => String(a.display).localeCompare(String(b.display)));
     },
+    instrumentsByKeys: (keys) => (keys.length ? q(sb.from("instruments").select("*").in("key", keys)) : Promise.resolve([])),
+    instrument: async (key) => (await q(sb.from("instruments").select("*").eq("key", key).limit(1)))[0] || null,
+    // Signaux du bot sur une paire (sans les bougies, plus léger), du plus récent au plus ancien.
+    signalsFor: (key, limit = 20) => q(sb.from("signals").select("id,created_at,status,direction,display,strategy,score,entry_low,entry_high,sl,tp1,tp2,tp3,expires_at,quote,venue,asset_class,trigger_text,rr,instrument_key,api_symbol,api_asset_class")
+      .eq("instrument_key", key).order("created_at", { ascending: false }).limit(limit)),
     edges: () => q(sb.from("bot_edges").select("*").order("asset_class")),
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),
@@ -60,9 +65,10 @@ function supabaseBackend() {
       return b.message;
     },
     // --- trades
-    trades: ({ userId, status, limit = 200 } = {}) => {
+    trades: ({ userId, status, instrumentKey, limit = 200 } = {}) => {
       let r = sb.from("trades").select("*,profiles:user_id(pseudo)").order("opened_at", { ascending: false }).limit(limit);
       if (userId) r = r.eq("user_id", userId);
+      if (instrumentKey) r = r.eq("instrument_key", instrumentKey);
       if (status) r = r.eq("status", status);
       return q(r);
     },

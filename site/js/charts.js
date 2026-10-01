@@ -2,7 +2,7 @@
 import { createChart, CandlestickSeries, LineSeries, LineStyle, createSeriesMarkers } from "../vendor/lightweight-charts.mjs";
 import { px } from "./ui.js";
 
-const THEME = {
+export const THEME = {
   layout: { background: { color: "#14243A" }, textColor: "#9DB4C8", fontFamily: "Atkinson Hyperlegible, sans-serif" },
   grid: { vertLines: { color: "rgba(39,64,95,.45)" }, horzLines: { color: "rgba(39,64,95,.45)" } },
   rightPriceScale: { borderColor: "#27405F" },
