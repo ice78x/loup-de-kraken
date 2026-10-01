@@ -87,11 +87,9 @@ export async function render(main, ctx) {
 
     <dl class="chiffres">
       ${soldeBloc(me)}
-      <div><dt>Risque par trade</dt><dd class="num">${eur((me.balance_eur * me.risk_pct) / 100)}</dd></div>
-      <div><dt>Risque encore disponible</dt><dd class="num">${eur(budget.available)}</dd></div>
       <div><dt>Résultat du jour</dt><dd class="num ${cls(budget.todayPnl)}">${eur(budget.todayPnl, true)}</dd></div>
     </dl>
-    ${budget.dailyStop ? `<div class="alerte rouge"><strong>Stop pour aujourd'hui.</strong> Tu as atteint ta perte maximale du jour
+    ${budget.dailyStop && me.guardrails === true ? `<div class="alerte rouge"><strong>Stop pour aujourd'hui.</strong> Tu as atteint ta perte maximale du jour
       (${pct(+me.max_daily_loss_pct)}). ${me.guardrails === false ? "Tes garde-fous sont coupés : rien n'est bloqué, mais c'est souvent le moment de faire une pause."
         : "Le site bloque les nouveaux trades jusqu'à demain."}</div>` : ""}
 

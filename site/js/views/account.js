@@ -26,15 +26,15 @@ export async function render(main, ctx) {
             Corrige-le ici après un dépôt, un retrait, ou pour l'aligner sur Kraken : on repart de cette valeur.</small></label>
       </div>
       <div class="trois">
-        <label class="champ"><span>Risque par trade (%)</span><input name="risk" inputmode="decimal" value="${me.risk_pct}"><small>Conseillé : 1 %${me.guardrails === false ? "" : ". Maximum 2 %"}.</small></label>
+        <label class="champ"><span>Risque par trade (%)</span><input name="risk" inputmode="decimal" value="${me.risk_pct}"><small>Conseillé : 1 %${me.guardrails === true ? ". Maximum 2 %" : ""}.</small></label>
         <label class="champ"><span>Risque ouvert max (%)</span><input name="open" inputmode="decimal" value="${me.max_open_risk_pct}"><small>Tous trades cumulés.</small></label>
         <label class="champ"><span>Perte max du jour (%)</span><input name="day" inputmode="decimal" value="${me.max_daily_loss_pct}"><small>Ensuite : stop jusqu'au lendemain.</small></label>
       </div>
       <label class="interrupteur">
-        <input type="checkbox" name="guardrails" ${me.guardrails === false ? "" : "checked"}>
-        <span><b>Garde-fous du club</b> — bloque les trades au-delà de 2 % de risque, au-delà de ton risque cumulé,
+        <input type="checkbox" name="guardrails" ${me.guardrails === true ? "checked" : ""}>
+        <span><b>Garde-fous du club</b> (désactivés par défaut) — à cocher si tu veux qu'ils bloquent les trades au-delà de 2 % de risque, au-delà de ton risque cumulé,
           après ta perte max du jour, ou si la liquidation arrive avant ton stop.
-          <span class="muted">Coupés : rien n'est bloqué, le site t'avertit seulement.</span></span>
+          <span class="muted">Décochés : rien n'est bloqué, tu trades librement.</span></span>
       </label>
       <p class="small muted" style="margin:0">Exemple : avec ${eur(+me.balance_eur)} et ${me.risk_pct} %, tu risques ${eur((me.balance_eur * me.risk_pct) / 100)} par trade.
         Ne monte jamais ton risque parce que tu peux redéposer de l'argent.</p>

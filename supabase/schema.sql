@@ -22,6 +22,17 @@ create table if not exists public.profiles (
 -- Garde-fous du club (1-2 % par trade, risque cumulé, perte du jour) : chaque membre peut les couper pour lui-même.
 -- Coupés, le site n'empêche plus rien (avertissements seulement). Le bot, lui, garde ses règles pour ses propositions.
 alter table public.profiles add column if not exists guardrails boolean not null default true;
+-- Depuis le 01/10/2026 : garde-fous DÉSACTIVÉS par défaut (chacun les active dans Mon compte s'il le souhaite).
+alter table public.profiles alter column guardrails set default false;
+-- Migrations à faire une seule fois (le fichier peut être relancé sans tout réappliquer).
+create table if not exists public._migrations (name text primary key, done_at timestamptz not null default now());
+alter table public._migrations enable row level security;
+do $$ begin
+  if not exists (select 1 from public._migrations where name = 'garde_fous_off_par_defaut') then
+    update public.profiles set guardrails = false;
+    insert into public._migrations (name) values ('garde_fous_off_par_defaut');
+  end if;
+end $$;
 alter table public.profiles alter column risk_pct type numeric(5,2);
 alter table public.profiles alter column max_open_risk_pct type numeric(5,2);
 alter table public.profiles alter column max_daily_loss_pct type numeric(5,2);

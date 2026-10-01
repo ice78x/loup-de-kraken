@@ -25,7 +25,7 @@ export function tradeForm(host, o) {
   const maxLev = Math.max(1, Math.min(10, o.inst.max_leverage || 10));
   const baseName = esc(String(o.inst.display || "").split("/")[0]);
   const q = sym(o.inst.quote).trim() || o.inst.quote || "";
-  const free = o.me.guardrails === false; // garde-fous coupés par le membre (Mon compte)
+  const free = o.me.guardrails !== true; // garde-fous du club : désactivés par défaut, actifs seulement si le membre les coche
   const grille = krakenFees(o.inst);
   const fees = { taker: o.feeTaker ?? grille.taker, maker: o.feeMaker ?? grille.maker };
   const fp = (x) => String(+x.toFixed(3)).replace(".", ",") + " %";
@@ -33,7 +33,6 @@ export function tradeForm(host, o) {
 
   host.innerHTML = `
   <form class="form" novalidate>
-    ${free ? '<p class="alerte">Garde-fous coupés : rien n\'est bloqué, lis bien les avertissements (réactivables dans Mon compte).</p>' : ""}
     <div class="choix" role="radiogroup" aria-label="Sens">
       <label class="long"><input type="radio" name="dir" value="LONG" ${dir0 === "LONG" ? "checked" : ""}><span>LONG ↑ (acheter)</span></label>
       <label class="short"><input type="radio" name="dir" value="SHORT" ${dir0 === "SHORT" ? "checked" : ""}><span>SHORT ↓ (vendre)</span></label>
@@ -118,9 +117,13 @@ export function tradeForm(host, o) {
     }
     const errs = [...(plan.errors || [])];
     if (p.direction === "SHORT" && o.inst.can_short === false) errs.push("Cet instrument ne permet pas le SHORT sur Kraken (pas de marge).");
-    const club = free ? plan.warnings : errs; // garde-fous du club : bloquants, ou simples avertissements s'ils sont coupés
-    if (budget.dailyStop) club.push("Perte maximale du jour atteinte" + (free ? "." : " : pas de nouveau trade aujourd'hui."));
-    if (plan.lossAtSlEur > budget.available + 1e-6) club.push(`Risque cumulé élevé : il te restait ${eur(budget.available)} de risque disponible selon tes réglages (tes autres trades ouverts comptent).`);
+    if (free) {
+      // Garde-fous coupés (par défaut) : on ne parle plus des règles de risque du club, seulement des contraintes Kraken.
+      plan.warnings = plan.warnings.filter((w) => !/règle du club|risque habituel|Risque cumulé|Perte maximale du jour/.test(w));
+    } else {
+      if (budget.dailyStop) errs.push("Perte maximale du jour atteinte : pas de nouveau trade aujourd'hui.");
+      if (plan.lossAtSlEur > budget.available + 1e-6) errs.push(`Risque cumulé élevé : il te restait ${eur(budget.available)} de risque disponible selon tes réglages (tes autres trades ouverts comptent).`);
+    }
     plan.blocking = errs;
     render(p, lev, errs);
   }
@@ -133,13 +136,13 @@ export function tradeForm(host, o) {
       return;
     }
     const lossPct = plan.effectiveRiskPct ?? (plan.lossAtSlEur / p.balance) * 100;
-    const ton = lossPct > MAX_RISK_PCT + 1e-9 ? "short" : lossPct > +o.me.risk_pct + 1e-9 ? "ambre" : "long";
+    const ton = free ? "" : lossPct > MAX_RISK_PCT + 1e-9 ? "short" : lossPct > +o.me.risk_pct + 1e-9 ? "ambre" : "long";
     box.innerHTML = `
       ${errs.length ? `<div class="alerte rouge"><ul>${errs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : ""}
-      <div class="feu ${ton}"><span class="feu-icone">${ton === "long" ? "🛡️" : ton === "ambre" || free ? "⚠️" : "⛔"}</span>
+      <div class="feu ${ton}"><span class="feu-icone">${free ? "📉" : ton === "long" ? "🛡️" : ton === "ambre" ? "⚠️" : "⛔"}</span>
         <div><strong>${plan.hasSl === false ? "Sans stop, perte max" : plan.liqBeforeSl ? "Liquidation avant le stop, perte max" : "Si le SL est touché"} : ${eur(-plan.lossAtSlEur)} (${pct(lossPct, 2)} de ton solde)</strong>
-        <p>${ton === "long" ? "Dans ta règle de risque." : ton === "ambre" ? "Plus que ton risque habituel : seulement pour un setup exceptionnel."
-          : free ? `Au-delà des ${MAX_RISK_PCT} % conseillés par le club.` : `Au-delà de ${MAX_RISK_PCT} % : interdit par la règle du club.`}</p></div></div>
+        ${free ? "" : `<p>${ton === "long" ? "Dans ta règle de risque." : ton === "ambre" ? "Plus que ton risque habituel : seulement pour un setup exceptionnel."
+          : `Au-delà de ${MAX_RISK_PCT} % : interdit par la règle du club.`}</p>`}</div></div>
       <div class="bloc"><div class="split">
         <dl class="chiffres" style="margin:0">
           <div><dt>Quantité à ${p.direction === "LONG" ? "acheter" : "vendre"}</dt><dd class="num">${+plan.qty.toPrecision(6)} ${baseName}</dd></div>
