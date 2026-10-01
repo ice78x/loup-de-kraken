@@ -8,6 +8,6 @@
 //  Laissé vide → le site s'ouvre en MODE DÉMO (données fictives).
 // ============================================================
 window.LDK_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_URL: "https://rzgvrrcmxezpnuhllbjg.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_0oV3R6yQy-x6r-ohj_gsZg_hQLCMHpo",
 };
