@@ -43,6 +43,11 @@ alter table public.profiles add constraint profiles_max_open_risk_pct_check chec
 alter table public.profiles drop constraint if exists profiles_max_daily_loss_pct_check;
 alter table public.profiles add constraint profiles_max_daily_loss_pct_check check (max_daily_loss_pct > 0 and max_daily_loss_pct <= 100);
 
+-- Marché utilisé par le membre sur Kraken : futures perpétuels (par défaut) ou spot. Change les frais, le levier et la liquidation affichés.
+alter table public.profiles add column if not exists trade_mode text not null default 'futures';
+alter table public.profiles drop constraint if exists profiles_trade_mode_check;
+alter table public.profiles add constraint profiles_trade_mode_check check (trade_mode in ('futures', 'spot'));
+
 -- Changement de pseudo : le membre fait une demande (pseudo_pending), l'admin la valide.
 alter table public.profiles add column if not exists pseudo_pending text;
 alter table public.profiles drop constraint if exists profiles_pseudo_pending_check;

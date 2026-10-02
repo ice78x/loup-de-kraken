@@ -112,6 +112,8 @@ class App:
         if inst.venue != "spot":
             return s.default_futures_taker_fee_pct, s.default_futures_maker_fee_pct, "défaut (estimation)"
         t, m, label = default_fees(inst.venue, inst.asset_class, inst.base, inst.quote)
+        if label.startswith("spot") and s.execution_venue == "futures":  # tradé sur le perpétuel correspondant
+            return s.default_futures_taker_fee_pct, s.default_futures_maker_fee_pct, "défaut futures perpétuels (estimation)"
         if label.startswith("spot"):  # spot crypto : valeurs réglables (.env)
             return s.default_spot_taker_fee_pct, s.default_spot_maker_fee_pct, "défaut (estimation)"
         return t, m, f"défaut {label} (estimation)"  # xStocks, stablecoins : grille Kraken

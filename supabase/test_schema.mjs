@@ -37,6 +37,7 @@ let r = await db.query("select pseudo, approved, is_admin from public.profiles o
 assert.deepEqual(r.rows.find((x) => x.pseudo === "Ice"), { pseudo: "Ice", approved: true, is_admin: true });
 assert.deepEqual(r.rows.find((x) => x.pseudo === "b"), { pseudo: "b", approved: false, is_admin: false });
 assert.equal((await db.query("select bool_or(guardrails) as g from public.profiles")).rows[0].g, false); // garde-fous coupés par défaut
+assert.equal((await db.query("select min(trade_mode) as m from public.profiles")).rows[0].m, "futures"); // futures perpétuels par défaut
 console.log("✓ premier compte admin, suivants en attente");
 
 r = await as(U2, "select id from public.profiles");

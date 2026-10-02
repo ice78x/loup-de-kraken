@@ -30,6 +30,13 @@ export async function render(main, ctx) {
         <label class="champ"><span>Risque ouvert max (%)</span><input name="open" inputmode="decimal" value="${me.max_open_risk_pct}"><small>Tous trades cumulés.</small></label>
         <label class="champ"><span>Perte max du jour (%)</span><input name="day" inputmode="decimal" value="${me.max_daily_loss_pct}"><small>Ensuite : stop jusqu'au lendemain.</small></label>
       </div>
+      <div class="champ"><span>Je trade sur Kraken en</span>
+        <div class="choix" role="radiogroup" aria-label="Marché utilisé">
+          <label><input type="radio" name="mode" value="futures" ${me.trade_mode === "spot" ? "" : "checked"}><span>Futures perpétuels</span></label>
+          <label><input type="radio" name="mode" value="spot" ${me.trade_mode === "spot" ? "checked" : ""}><span>Spot</span></label>
+        </div>
+        <small>Futures (PF_…) : levier jusqu'à x10, short possible, frais 0,02 % / 0,05 %. Spot : frais 0,40 % / 0,80 %.
+          Le site calcule frais, levier conseillé et liquidation selon ce choix.</small></div>
       <label class="interrupteur">
         <input type="checkbox" name="guardrails" ${me.guardrails === true ? "checked" : ""}>
         <span><b>Garde-fous du club</b> (désactivés par défaut) — à cocher si tu veux qu'ils bloquent les trades au-delà de 2 % de risque, au-delà de ton risque cumulé,
@@ -88,7 +95,7 @@ export async function render(main, ctx) {
     const renomme = nom !== me.pseudo;
     // Membre : le nouveau pseudo part en demande chez l'admin. Admin : changement direct.
     const patch = { ...(me.is_admin ? { pseudo: nom } : renomme ? { pseudo_pending: nom } : {}), balance_eur: num(f.balance.value), risk_pct: num(f.risk.value),
-      max_open_risk_pct: num(f.open.value), max_daily_loss_pct: num(f.day.value), guardrails: f.guardrails.checked };
+      max_open_risk_pct: num(f.open.value), max_daily_loss_pct: num(f.day.value), guardrails: f.guardrails.checked, trade_mode: f.mode.value };
     const lim = patch.guardrails ? { risk: 2, open: 5, day: 10 } : { risk: 100, open: 100, day: 100 };
     if (!(patch.balance_eur >= 0)) return toast("Solde invalide.", true);
     if (!(patch.risk_pct > 0 && patch.risk_pct <= lim.risk)) return toast(`Le risque par trade doit être entre 0,1 et ${lim.risk} %.`, true);

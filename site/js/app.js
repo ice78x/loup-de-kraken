@@ -4,6 +4,7 @@
 import { backend, DEMO } from "./data.js";
 import { esc, toast } from "./ui.js";
 import { majSolde } from "./solde.js";
+import { setMode } from "./fees.js";
 import * as home from "./views/home.js";
 import * as signal from "./views/signal.js";
 import * as trades from "./views/trades.js";
@@ -84,6 +85,7 @@ async function route() {
   if (!ctx.me?.approved) { root.innerHTML = banner + '<div id="main"></div>'; return auth.renderPending(document.getElementById("main"), ctx); }
   // Solde à jour avec les gains/pertes des trades (recalculé à chaque page, rien n'est modifié dans la base).
   try { await majSolde(ctx, backend); } catch { /* on garde le solde enregistré */ }
+  setMode(ctx.me?.trade_mode); // frais / levier / liquidation : futures perpétuels par défaut, ou spot (Mon compte)
   if (!document.querySelector(".shell")) root.innerHTML = shell();
   const hash = location.hash || "#/";
   const match = ROUTES.find(([re]) => re.test(hash));

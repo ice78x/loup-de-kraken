@@ -49,7 +49,7 @@ function sig(id, display, direction, status, seed, price, score, strategy, extra
 }
 
 export function demoBackend() {
-  const me = { id: "demo-me", pseudo: "Ice", guardrails: false, balance_eur: 90, risk_pct: 1, max_open_risk_pct: 2,
+  const me = { id: "demo-me", pseudo: "Ice", guardrails: false, trade_mode: "futures", balance_eur: 90, risk_pct: 1, max_open_risk_pct: 2,
     max_daily_loss_pct: 3, approved: true, is_admin: true, created_at: ago(240) };
   const hist = [{ created_at: ago(24), old_balance: 80, new_balance: 90 }];
   const members = [me,

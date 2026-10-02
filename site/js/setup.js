@@ -1,6 +1,6 @@
 // Carte « setup » expliquée pour débutants : où en est le prix, scénario du bot, combien on risque / peut gagner.
 // Logique pure (testée dans tests/setup.test.mjs) + HTML de la carte. Le graphique en direct est dans live.js.
-import { krakenFees } from "./fees.js";
+import { krakenFees, venueEffective } from "./fees.js";
 import { liqFraction } from "./sizing.js";
 import { STRAT, ago, esc, eur, pct, pq } from "./ui.js";
 
@@ -88,6 +88,15 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
     const closed = candles.length >= 2 ? +candles.at(-2)[4] : null;
     const zoneTrigger = /zone/i.test(s.trigger_text || "");
     if (zoneTrigger && closed != null && closed >= lo && closed <= hi) {
+      // Le scan qui a produit ce setup est-il postérieur à la clôture de cette bougie ? Alors le bot a déjà revérifié
+      // avec cette bougie et ne l'a pas validé : on ne redemande pas de scanner, on dit pourquoi.
+      const finBougie = (+candles.at(-2)[0] + BAR) * 1000;
+      const scanAt = new Date(s.created_at).getTime();
+      if (isFinite(scanAt) && scanAt >= finBougie) {
+        const raison = (s.warnings || []).find((w) => w && !/DÉMO/.test(w)) || s.trigger_text || "une des vérifications (volume, structure, frais ou risque) n'est pas passée";
+        return { code: "revu", ton: "ambre", icone: "🔎", titre: "Revérifié par le bot : pas encore validé",
+          texte: `Au scan de ${new Date(scanAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}, le bot a vu cette bougie mais n'a pas validé le trade. Raison : ${raison}. Inutile de relancer tout de suite : attends le prochain scan automatique ou une nouvelle bougie.` };
+      }
       return { code: "condition", ton: "long", icone: "✅", titre: "Condition remplie",
         texte: "La dernière bougie 15 min a clôturé dans la zone. Lance « Scanner maintenant » : le bot revérifie tout (volume, structure, risque) avant de valider." };
     }
@@ -136,7 +145,7 @@ export function projection(s, candles, price = null) {
 }
 
 /** Mouvement de prix (en %) qui liquide une position isolée à ce levier (règles Kraken, voir liqFraction dans sizing.js). */
-const liqPctOf = (s, lev, maxLev = 10) => liqFraction(lev, s.venue || "spot", maxLev) * 100;
+const liqPctOf = (s, lev, maxLev = 10) => liqFraction(lev, venueEffective(s), maxLev) * 100;
 /** Mise de référence pour le levier conseillé : 25 % du solde. */
 export const MISE_REF = 25;
 
@@ -157,8 +166,8 @@ export function ecarts(s) {
  */
 export function levierConseille(s, me = {}, maxLev = 10) {
   const { slPct, maker, taker } = ecarts(s);
-  const cap = Math.max(1, Math.min(10, +maxLev || 10));
-  const minLev = !isLong(s) && (s.venue || "spot") === "spot" ? Math.min(2, cap) : 1;
+  const cap = s.venue !== "futures" && venueEffective(s) === "futures" ? 10 : Math.max(1, Math.min(10, +maxLev || 10)); // paire spot tradée sur son perpétuel : x10 (EEE)
+  const minLev = !isLong(s) && venueEffective(s) === "spot" ? Math.min(2, cap) : 1;
   if (!(slPct > 0)) return { lev: minLev, misePct: null, liqPct: liqPctOf(s, minLev, maxLev), slPct: null, note: "stop manquant" };
   const perte = slPct + maker + taker; // % de la position perdu au stop, frais compris
   let sur = cap; // plus grand levier qui garde la liquidation au moins 2× plus loin que le stop
@@ -247,8 +256,8 @@ export function levierBadge(s, me, maxLev) {
  */
 export function chiffres(s, me, maxLev = 10) {
   const c = levierConseille(s, me, maxLev);
-  const cap = Math.max(1, Math.min(10, +maxLev || 10));
-  const minLev = !isLong(s) && (s.venue || "spot") === "spot" ? Math.min(2, cap) : 1;
+  const cap = s.venue !== "futures" && venueEffective(s) === "futures" ? 10 : Math.max(1, Math.min(10, +maxLev || 10)); // paire spot tradée sur son perpétuel : x10 (EEE)
+  const minLev = !isLong(s) && venueEffective(s) === "spot" ? Math.min(2, cap) : 1;
   const levs = [...new Set([1, 2, 3, 5, 10, c.lev])].filter((l) => l >= minLev && l <= cap).sort((a, b) => a - b);
   const f = krakenFees(s);
   const vue = (l) => {
@@ -263,7 +272,7 @@ export function chiffres(s, me, maxLev = 10) {
       </dl>
       ${r.tout != null && r.tout <= 0 ? `<p class="alerte rouge small">⚠ <b>Les frais mangent tout le gain :</b> même si tous les objectifs sont atteints, ce trade perd de l'argent
         (frais Kraken ${esc(f.label)} : ${p1(f.maker)} par ordre limite, ${p1(f.taker)} au marché, sur la valeur de la position). Les objectifs sont trop proches.
-        ${(s.venue || "spot") === "spot" ? "En futures perpétuels, les frais sont bien plus bas (0,02 % / 0,05 %)." : "À éviter."}</p>`
+        ${venueEffective(s) === "spot" ? "En futures perpétuels, les frais sont bien plus bas (0,02 % / 0,05 %)." : "À éviter."}</p>`
         : r.tp1 != null && r.tp1 <= 0 ? `<p class="alerte small">⚠ À l'objectif 1, les frais sont plus gros que le gain : seuls les objectifs 2 et 3 rapportent.</p>` : ""}
       <p class="small muted">Ex. avec 10 € de mise à x${l} (position de ${eur(10 * l)}) : ${ex(-r.perte)} · ${ex(r.tp1)} · ${ex(r.tout)}.
         ${l > c.lev ? " Plus de levier = position plus grosse pour la même mise : la perte au stop grossit aussi." : ""}</p>

@@ -2,6 +2,7 @@
 import { backend } from "../data.js";
 import { goLive } from "../live.js";
 import { LEGENDE, chiffres, etat, idee, levierBadge, levierConseille, planTable } from "../setup.js";
+import { perpSymbol, venueEffective } from "../fees.js";
 import { eurPerQuote, krakenLink, prices } from "../market.js";
 import { STRAT, ago, dt, esc, pq, px } from "../ui.js";
 import { tradeForm } from "./tradeform.js";
@@ -75,10 +76,10 @@ export async function render(main, ctx, id) {
         <h2>Le passer sur ton téléphone</h2>
         <ol>
           <li>Ouvre l'app <b>Kraken</b> et passe en mode <b>Pro</b>.</li>
-          <li>Cherche <b>${esc(s.display)}</b>.</li>
+          <li>${venueEffective(s) === "futures" ? `Onglet <b>Futures</b>, cherche <b>${esc(perpSymbol(s))}</b> (le perpétuel de ${esc(s.display)}).` : `Cherche <b>${esc(s.display)}</b>.`}</li>
           <li>Choisis <b>${s.direction === "LONG" ? "Acheter" : "Vendre"}</b>, type d'ordre <b>Limite</b>, prix dans la zone d'entrée.</li>
           <li>Entre la <b>quantité</b> choisie ici, après avoir vérifié ta perte au stop (pas un montant au hasard).</li>
-          <li>Levier : <b>x${lev}</b>${lev > 1 ? " en marge <b>isolée</b>" : " (pas de levier)"}${s.direction === "SHORT" && (s.venue || "spot") === "spot" ? " — un SHORT en spot demande au moins x2" : ""}.</li>
+          <li>Levier : <b>x${lev}</b>${lev > 1 ? " en marge <b>isolée</b>" : " (pas de levier)"}${s.direction === "SHORT" && venueEffective(s) === "spot" ? " — un SHORT en spot demande au moins x2" : ""}.</li>
           <li>Ajoute tout de suite un ordre <b>stop-loss</b> à ${pq(s.sl, s.quote)}, puis tes ordres limite de sortie aux TP.</li>
           <li>Reviens ici et enregistre le trade en mode <b>Réel</b> pour le suivre.</li>
         </ol>

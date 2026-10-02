@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     default_futures_taker_fee_pct: float = 0.05
     default_spot_maker_fee_pct: float = 0.40
     default_futures_maker_fee_pct: float = 0.02
+    # Les membres tradent les signaux crypto sur les futures perpétuels Kraken (PF_…) : frais futures pour ces paires.
+    # "spot" pour revenir aux frais spot (0,40 / 0,80 %).
+    execution_venue: str = "futures"
     tp_split: tuple[float, float, float] = (0.30, 0.40, 0.30)
     correlation_block: float = 0.75
     timezone: str = "Europe/Paris"

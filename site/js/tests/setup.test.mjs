@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { espace, etat, levierConseille, minutesToClose, ordre, phase, projection, scenario, touches } from "../setup.js";
+import { setMode } from "../fees.js";
 
 const NOW = Date.UTC(2026, 9, 1, 12, 7);
 const futur = new Date(NOW + 3600e3).toISOString();
@@ -73,6 +74,7 @@ test("historique : SL touché / TP touché d'après les bougies depuis la détec
 });
 
 test("levier conseillé : liquidation loin du stop, mise de 25 % ≈ ton risque, SHORT spot x2 minimum", () => {
+  setMode("spot");
   // SL à 2 % : 1 % de risque / (25 % × ~3,2 % avec frais spot) ≈ x1
   const l = levierConseille({ ...long, entry_low: 100, entry_high: 100, sl: 98, venue: "spot" }, { risk_pct: 1 });
   assert.equal(l.lev, 1);
@@ -85,6 +87,9 @@ test("levier conseillé : liquidation loin du stop, mise de 25 % ≈ ton risque,
   assert.equal(levierConseille({ ...long, entry_low: 100, entry_high: 100, sl: 99.5, venue: "futures" }, { risk_pct: 1 }, 3).lev, 3);
   // SHORT spot : Kraken impose x2 minimum
   assert.ok(levierConseille({ ...short, venue: "spot", sl: 110 }, { risk_pct: 1 }).lev >= 2);
+  setMode("futures");
+  // En futures (par défaut), une paire spot du bot se trade sur son perpétuel : pas de x2 minimum pour le SHORT
+  assert.equal(levierConseille({ ...short, venue: "spot", entry_low: 100, entry_high: 100, sl: 110 }, { risk_pct: 1 }).lev, 1);
 });
 
 test("scénario en % de la mise : le levier multiplie gains ET pertes ; liquidation avant le stop = toute la mise", () => {
@@ -116,9 +121,24 @@ test("ordre : validés d'abord, puis confiance décroissante", () => {
 test("frais spot plus gros que le gain : résultat négatif au TP (affiché en rouge, pas « +- »)", async () => {
   const { chiffres } = await import("../setup.js");
   const s = { ...long, entry_low: 100, entry_high: 100, sl: 99.8, tp1: 100.3, tp2: 100.5, tp3: 100.7, venue: "spot" };
+  // En futures (par défaut) : frais 0,02 / 0,05 % → le même setup reste gagnant aux objectifs
+  assert.ok(scenario(s, 1).tp1 > 0 && scenario(s, 1).tout > 0);
+  setMode("spot");
   const r = scenario(s, 1);
   assert.ok(r.tp1 < 0 && r.tout < 0);
   const html = chiffres(s, { risk_pct: 1 });
   assert.ok(!html.includes("+-") && !html.includes("+−"));
   assert.match(html, /Les frais mangent tout le gain/);
+  setMode("futures");
+});
+
+test("condition remplie puis scan qui ne valide pas : on ne redemande pas de scanner, on donne la raison", () => {
+  const t0 = Math.floor(NOW / 1000 / 900) * 900;
+  const bougies = [[t0 - 900, 100.5, 100.8, 100.2, 100.5], [t0, 100.5, 100.7, 100.3, 100.6]]; // avant-dernière fermée dans la zone
+  const avant = { ...short, created_at: new Date((t0 - 900) * 1000).toISOString() };              // scan AVANT la clôture
+  assert.equal(phase(avant, 100.6, { now: NOW, candles: bougies }).code, "condition");
+  const apres = { ...short, created_at: new Date(t0 * 1000 + 60e3).toISOString(), warnings: ["volume trop faible"] };
+  const ph = phase(apres, 100.6, { now: NOW, candles: bougies });
+  assert.equal(ph.code, "revu");
+  assert.match(ph.texte, /volume trop faible/);
 });

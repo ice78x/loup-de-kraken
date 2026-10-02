@@ -3,7 +3,7 @@
 // (marge isolée, perte au SL ou à la liquidation, gains aux TP, frais Kraken réels de la grille officielle).
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
-import { krakenFees } from "../fees.js";
+import { krakenFees, perpSymbol, venueEffective } from "../fees.js";
 import { planFromQty, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
 import { busy, esc, eur, num, pct, pq, px, rr, sym, toast } from "../ui.js";
 
@@ -22,7 +22,9 @@ export function tradeForm(host, o) {
   const inZone = s && o.price && o.price >= s.entry_low && o.price <= s.entry_high;
   const entry0 = s ? (inZone ? o.price : (dir0 === "LONG" ? s.entry_high : s.entry_low)) : o.price;
   const budget = riskBudget(o.me, o.trades);
-  const maxLev = Math.max(1, Math.min(10, o.inst.max_leverage || 10));
+  const venue = venueEffective(o.inst); // futures perpétuels (par défaut) ou spot, selon Mon compte
+  const perp = venue === "futures";
+  const maxLev = perp ? 10 : Math.max(1, Math.min(10, o.inst.max_leverage || 10));
   const baseName = esc(String(o.inst.display || "").split("/")[0]);
   const q = sym(o.inst.quote).trim() || o.inst.quote || "";
   const free = o.me.guardrails !== true; // garde-fous du club : désactivés par défaut, actifs seulement si le membre les coche
@@ -62,7 +64,7 @@ export function tradeForm(host, o) {
     </div>
 
     <label class="champ"><span>Levier : <b id="lev-v">x1</b></span>
-      <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${o.levRef ? Math.min(maxLev, o.levRef) : dir0 === "SHORT" && (o.inst.venue || "spot") === "spot" ? Math.min(2, maxLev) : 1}">
+      <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${o.levRef ? Math.min(maxLev, o.levRef) : dir0 === "SHORT" && !perp ? Math.min(2, maxLev) : 1}">
       <small>${o.levRef ? `Levier conseillé pour ce trade : <b>x${o.levRef}</b>. ` : ""}Pour une même quantité, le levier réduit la marge bloquée et rapproche la liquidation ; il ne change <b>pas</b> ta perte au SL.</small></label>
 
     <label class="champ"><span>Stop loss (SL) — facultatif</span><input name="sl" inputmode="decimal" value="${r6(s?.sl)}" placeholder="aucun">
@@ -92,7 +94,7 @@ export function tradeForm(host, o) {
   const base = () => ({
     direction: f.elements.dir.value, entry: v("entry"), sl: v("sl"), tps: [v("tp1"), v("tp2"), v("tp3")].filter((x) => x != null),
     balance: +o.me.balance_eur, feeTaker: fees.taker, feeMaker: fees.maker, entryIsMaker: orderType() === "limit",
-    eurPerQuote: o.eurPerQuote, lotDecimals: o.inst.lot_decimals ?? 8, ordermin: o.inst.ordermin || 0, venue: o.inst.venue || "spot", maxLev: +o.inst.max_leverage || 10,
+    eurPerQuote: o.eurPerQuote, lotDecimals: o.inst.lot_decimals ?? 8, ordermin: perp ? 0 : o.inst.ordermin || 0, venue, maxLev: perp ? 10 : +o.inst.max_leverage || 10,
     usedMarginEur: usedMarginEur(o.trades),
   });
 
@@ -116,7 +118,7 @@ export function tradeForm(host, o) {
       if (sug && sug > lev) { f.elements.lev.value = sug; return update(); }
     }
     const errs = [...(plan.errors || [])];
-    if (p.direction === "SHORT" && o.inst.can_short === false) errs.push("Cet instrument ne permet pas le SHORT sur Kraken (pas de marge).");
+    if (!perp && p.direction === "SHORT" && o.inst.can_short === false) errs.push("Cet instrument ne permet pas le SHORT sur Kraken (pas de marge).");
     if (free) {
       // Garde-fous coupés (par défaut) : on ne parle plus des règles de risque du club, seulement des contraintes Kraken.
       plan.warnings = plan.warnings.filter((w) => !/règle du club|risque habituel|Risque cumulé|Perte maximale du jour/.test(w));
@@ -157,7 +159,7 @@ export function tradeForm(host, o) {
       ${plan.warnings.map((w) => `<p class="small muted">⚠ ${esc(w)}</p>`).join("")}
       <p class="small muted">Marge isolée : ce trade n'engage que ${eur(plan.marginEur)}. Le reste de ton capital n'est jamais touché par lui
         ${plan.freeMarginEur != null ? ` (marge encore libre avant ce trade : ${eur(plan.freeMarginEur)})` : ""}.${plan.liqPrice ? " Liquidation approximative : Kraken peut liquider un peu avant selon ses niveaux de marge." : ""}</p>
-      <p class="small muted">Sur Kraken : ${p.direction === "LONG" ? "Acheter" : "Vendre"} · ${p.entryIsMaker ? `Limite ${pq(p.entry, o.inst.quote)}` : "Marché"} · Quantité ${+plan.qty.toPrecision(6)} ${baseName} · Levier ${lev > 1 ? "x" + lev + " · marge isolée" : "aucun (x1)"}${p.sl ? ` · Stop ${pq(p.sl, o.inst.quote)}` : " · sans stop"}.
+      <p class="small muted">Sur Kraken${perp ? ` (onglet Futures, <b>${esc(perpSymbol(o.inst) || "")}</b>)` : " (spot)"} : ${p.direction === "LONG" ? "Acheter" : "Vendre"} · ${p.entryIsMaker ? `Limite ${pq(p.entry, o.inst.quote)}` : "Marché"} · Quantité ${+plan.qty.toPrecision(6)} ${baseName} · Levier ${lev > 1 ? "x" + lev + " · marge isolée" : "aucun (x1)"}${p.sl ? ` · Stop ${pq(p.sl, o.inst.quote)}` : " · sans stop"}.
         R:R net de frais : ${plan.rrNet.map((r, i) => `TP${i + 1} ${r.toFixed(1)}`).join(" · ")}.</p></div>`;
   }
 
