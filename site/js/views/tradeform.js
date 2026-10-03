@@ -58,8 +58,8 @@ export function tradeForm(host, o) {
       <div class="deux">
         <label class="champ"><span>Quantité (${baseName})</span><input name="qty" inputmode="decimal" placeholder="0">
           <small>${o.inst.ordermin ? `Minimum Kraken : ${o.inst.ordermin} ${baseName}` : "&nbsp;"}</small></label>
-        <label class="champ"><span>ou montant (${esc(q || "total")})</span><input name="amount" inputmode="decimal" placeholder="0">
-          <small>= quantité × prix d'entrée</small></label>
+        <label class="champ"><span>ou valeur de la position (${esc(q || "total")})</span><input name="amount" inputmode="decimal" placeholder="0">
+          <small id="max-pos">= quantité × prix d'entrée</small></label>
       </div>
       <div class="ligne small">
         <span class="muted">Ou engager en marge :</span>
@@ -137,13 +137,20 @@ export function tradeForm(host, o) {
       if (plan.lossAtSlEur > budget.available + 1e-6) errs.push(`Risque cumulé élevé : il te restait ${eur(budget.available)} de risque disponible selon tes réglages (tes autres trades ouverts comptent).`);
     }
     plan.blocking = errs;
+    const mp = f.querySelector("#max-pos");
+    if (mp && p.entry > 0 && p.eurPerQuote > 0) {
+      const fe = (p.entryIsMaker ? p.feeMaker : p.feeTaker) / 100;
+      const libre = Math.max(0, p.balance - (p.usedMarginEur || 0));
+      const maxPos = (0.998 * libre * lev) / (p.eurPerQuote * (1 + fe * lev));
+      mp.innerHTML = `Maximum à x${lev} avec ta marge libre (${eur(libre)}) : <b>${pq(maxPos, o.inst.quote)}</b>`;
+    }
     render(p, lev, errs);
   }
 
   function render(p, lev, errs) {
     const box = f.querySelector("#plan");
     if (!p.entry) { box.innerHTML = '<p class="muted">Renseigne le prix d\'entrée.</p>'; return; }
-    if (!plan.qty) {
+    if (!plan.qty || errs.some((e) => /^Marge insuffisante|^Plus de marge/.test(e))) {
       box.innerHTML = errs.length ? `<div class="alerte rouge"><ul>${errs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : "";
       return;
     }
@@ -159,7 +166,8 @@ export function tradeForm(host, o) {
         <dl class="chiffres" style="margin:0">
           <div><dt>Quantité à ${p.direction === "LONG" ? "acheter" : "vendre"}</dt><dd class="num">${+plan.qty.toPrecision(6)} ${baseName}</dd></div>
           <div><dt>Valeur de la position</dt><dd class="num">${eur(plan.notionalEur)}</dd></div>
-          <div><dt>Marge isolée (x${lev})</dt><dd class="num">${eur(plan.marginEur)}</dd></div>
+          <div><dt>Ta mise (marge isolée x${lev})</dt><dd class="num ${plan.marginEur > p.balance * 0.5 ? "perte" : ""}">${eur(plan.marginEur)}</dd>
+            <span class="small ${plan.marginEur > p.balance * 0.5 ? "perte" : "muted"}">${pct((plan.marginEur / p.balance) * 100, 1)} de ton solde${plan.marginEur > p.balance * 0.5 ? " · plus de la moitié de ton solde bloquée" : ""}</span></div>
           <div><dt>Frais d'entrée (${fp(p.entryIsMaker ? fees.maker : fees.taker)})</dt><dd class="num">${eur(-plan.entryFeeEur)}</dd></div>
           ${plan.liqPrice ? `<div><dt>Liquidation ≈</dt><dd class="num perte">${pq(plan.liqPrice, o.inst.quote)}</dd></div>` : ""}
           ${plan.profitsEur.map((g, i) => `<div><dt>Gain au TP${i + 1} (${[30, 40, 30][i]} %)</dt><dd class="num gain">${eur(g, true)} · ${rr(plan.rr[i])}</dd></div>`).join("")}
@@ -178,10 +186,14 @@ export function tradeForm(host, o) {
     const p = base();
     if (!(p.entry > 0) || !(p.eurPerQuote > 0)) { toast("Renseigne d'abord le prix d'entrée.", true); return; }
     const lev = +f.elements.lev.value;
-    const qq = ((p.balance * +b.dataset.marge) / 100) * lev / (p.entry * p.eurPerQuote);
+    const fe = (p.entryIsMaker ? p.feeMaker : p.feeTaker) / 100;
+    const libre = Math.max(0, p.balance - (p.usedMarginEur || 0));
+    const mise = Math.min((p.balance * +b.dataset.marge) / 100, libre);
+    const qq = (0.998 * mise * lev) / (p.entry * p.eurPerQuote * (1 + fe * lev)); // frais d'entrée + petite marge de sécurité, comme Kraken
     lastEdited = "qty";
     userTouchedLev = true; // on garde le levier choisi
-    f.elements.qty.value = r6(Math.floor(qq * 10 ** (p.lotDecimals ?? 8)) / 10 ** (p.lotDecimals ?? 8));
+    const pas = 10 ** Math.min(p.lotDecimals ?? 8, Math.max(0, 5 - Math.floor(Math.log10(Math.max(qq, 1e-12))))); // arrondi vers le bas (6 chiffres)
+    f.elements.qty.value = String(Math.floor(qq * pas) / pas);
     update();
   }));
   f.addEventListener("input", (e) => {

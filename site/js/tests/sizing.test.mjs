@@ -191,3 +191,14 @@ test("recalcul des frais : un trade saisi à 0,40 % (spot) recalculé à 0,02 % 
   s.realized_pnl_eur = (100 - 95) * 1 - 0.004 * (100 * 2 + 95 * 1);
   assert.ok(Math.abs(recalculerFrais(s, 0.02).ventes - 95) < 1e-9);
 });
+
+test("marge : 10 000 $ de position avec 1 000 € de solde — refusé à x1, possible à x10 seulement si marge + frais tiennent", async () => {
+  const { planFromQty } = await import("../sizing.js");
+  const base = { direction: "LONG", entry: 100, tps: [110], sl: 98, balance: 1000, strict: false, feeTaker: 0.05, feeMaker: 0.02,
+    entryIsMaker: true, eurPerQuote: 1, lotDecimals: 4, venue: "futures", maxLev: 10 };
+  assert.equal(planFromQty({ ...base, qty: 100, leverage: 1 }).ok, false);            // 10 000 € de marge > 1 000 €
+  assert.equal(planFromQty({ ...base, qty: 99, leverage: 10 }).ok, true);             // 990 € + 1,98 € de frais : ça tient
+  const ras = planFromQty({ ...base, qty: 100, leverage: 10 });                        // 1 000 € de marge + 2 € de frais > 1 000 €
+  assert.equal(ras.ok, false);
+  assert.ok(ras.errors.some((e) => /Marge insuffisante/.test(e)));
+});

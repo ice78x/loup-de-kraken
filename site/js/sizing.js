@@ -175,8 +175,9 @@ export function planFromQty(p) {
   }
   const lossPct = (lossAtSlEur / p.balance) * 100;
   const free = p.balance - (p.usedMarginEur || 0);
-  if (marginEur > free + 1e-9) {
-    const need = Math.ceil(notionalEur / Math.max(free, 1e-9));
+  // Comme Kraken : la marge ET les frais d'entrée doivent tenir dans la marge libre.
+  if (marginEur + entryFeeEur > free + 1e-9) {
+    const need = Math.ceil(notionalEur / Math.max(free - entryFeeEur, 1e-9));
     errors.push(free <= 0 ? "Plus de marge disponible : tes trades ouverts bloquent déjà tout ton solde."
       : need <= 10 ? `Marge insuffisante : il reste ${free.toFixed(2)} € de marge libre (il faudrait au moins x${need}, ou moins de quantité).`
         : "Marge insuffisante même à x10 : baisse la quantité.");

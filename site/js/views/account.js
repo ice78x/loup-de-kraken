@@ -2,6 +2,7 @@
 import { backend, DEMO } from "../data.js";
 import { ago, busy, dt, esc, eur, num, toast } from "../ui.js";
 import { majSolde } from "../solde.js";
+import { prices } from "../market.js";
 import { CATEGORIES, STATUTS } from "./ideas.js";
 
 export async function render(main, ctx) {
@@ -23,7 +24,10 @@ export async function render(main, ctx) {
             : "Un changement de pseudo est envoyé à l'admin, qui le valide."}</small></label>
         <label class="champ"><span>Mon solde (€)</span><input name="balance" inputmode="decimal" value="${(+me.balance_eur).toFixed(2)}">
           <small>Il bouge tout seul avec tes trades${s ? ` (${eur(s.realise, true)} depuis le ${dt(s.since).split(" ")[0]}, sur un départ de ${eur(s.base)})` : ""}.
-            Corrige-le ici après un dépôt, un retrait, ou pour l'aligner sur Kraken : on repart de cette valeur.</small></label>
+            Corrige-le ici après un dépôt, un retrait, ou pour l'aligner sur Kraken : on repart de cette valeur.</small>
+          <span class="ligne small" style="margin-top:6px"><span class="muted">Ton solde Kraken est en dollars ?</span>
+            <input name="balance_usd" inputmode="decimal" placeholder="montant en $" style="max-width:130px" aria-label="Solde en dollars">
+            <span id="usd-hint" class="muted"></span></span></label>
       </div>
       <div class="trois">
         <label class="champ"><span>Risque par trade (%)</span><input name="risk" inputmode="decimal" value="${me.risk_pct}"><small>Conseillé : 1 %${me.guardrails === true ? ". Maximum 2 %" : ""}.</small></label>
@@ -86,6 +90,20 @@ export async function render(main, ctx) {
 
     <section class="section ligne"><button class="btn" id="logout">Se déconnecter</button>
       ${DEMO ? '<span class="etiquette-demo">Mode démo</span>' : ""}</section>`;
+
+  // Conversion $ → € (taux Kraken en direct) : Kraken affiche le solde futures en USD, le site compte en euros.
+  {
+    const fm = main.querySelector("#me"), hint = main.querySelector("#usd-hint");
+    let taux = null;
+    const maj = () => {
+      const u = num(fm.balance_usd.value);
+      if (!taux) { hint.textContent = "taux €/$ indisponible pour l'instant"; return; }
+      if (u > 0) { fm.balance.value = (u * taux).toFixed(2); hint.textContent = `= ${eur(u * taux)} (1 $ = ${taux.toFixed(4)} €)`; }
+      else { const b = num(fm.balance.value); hint.textContent = b > 0 ? `ton solde ≈ ${(b / taux).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} $` : ""; }
+    };
+    prices([], { fx: true }).then((px) => { taux = px.eurPerUsd; maj(); }).catch(() => maj());
+    fm.balance_usd.addEventListener("input", maj);
+  }
 
   main.querySelector("#me").addEventListener("submit", (e) => {
     e.preventDefault();
