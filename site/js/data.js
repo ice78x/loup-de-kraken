@@ -36,6 +36,7 @@ function supabaseBackend() {
     balanceHistory: (id) => q(sb.from("balance_history").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(20)),
     // --- bot
     latestScan: async () => (await q(sb.from("scans").select("*").order("created_at", { ascending: false }).limit(1)))[0] || null,
+    recentScans: (n = 2) => q(sb.from("scans").select("*").order("created_at", { ascending: false }).limit(n)),
     signalsOf: (scanId) => q(sb.from("signals").select("*").eq("scan_id", scanId).order("status").order("score", { ascending: false })),
     signal: (id) => q(sb.from("signals").select("*").eq("id", id).single()),
     recentSignals: (limit = 30) => q(sb.from("signals").select("id,created_at,display,direction,status,score,strategy").eq("status", "TRADE").order("created_at", { ascending: false }).limit(limit)),

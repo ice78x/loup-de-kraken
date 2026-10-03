@@ -367,7 +367,7 @@ export function setupCard(s, me, maxLev = 10) {
     <header class="setup-tete">
       <span class="sens-badge">${L ? "↑ LONG" : "↓ SHORT"}</span>
       <div class="setup-nom"><h3>${esc(s.display)}</h3>
-        <span class="small muted">${esc(CLASSE[s.asset_class] || "")} · détecté ${ago(s.created_at)}</span></div>
+        <span class="small muted">${esc(CLASSE[s.asset_class] || "")} · détecté ${ago(s.created_at)}${s.precedent ? " · scan précédent" : ""}</span></div>
       <span class="pastille ${ek}" data-etat>${et}</span>
     </header>
     ${confiance(s)}

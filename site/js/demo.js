@@ -61,6 +61,9 @@ export function demoBackend() {
     sig(12, "LINK/USD", "SHORT", "TRADE", 21, 16.5, 64, "rejet_sweep"),
     sig(13, "ETH/USD", "LONG", "WATCH", 33, 2800, 55, "tendance_pullback"),
     sig(14, "PAXG/USD", "LONG", "WATCH", 41, 2650, 48, "cassure_retest", { asset_class: "commodity" }),
+    // Scan précédent (il y a ~1 h) : SOL n'est plus dans le dernier scan, BTC y est encore (doublon ignoré à l'accueil)
+    sig(9, "SOL/USD", "LONG", "WATCH", 55, 160, 58, "tendance_pullback", { scan_id: 0, created_at: ago(1.1) }),
+    sig(8, "BTC/USD", "LONG", "WATCH", 7, 71000, 60, "cassure_retest", { scan_id: 0, created_at: ago(1.1) }),
   ];
   // Paires fictives (démo) : celles des signaux + quelques autres pour la page Graphiques.
   const inst = (display, asset_class, demo_price, extra = {}) => ({ key: `spot:${display.replace("/", "")}`, display, venue: "spot",
@@ -148,7 +151,8 @@ export function demoBackend() {
     removeMember: (id) => { members.splice(members.findIndex((m) => m.id === id), 1); return ok({}); },
     balanceHistory: () => ok(hist),
     latestScan: () => ok(scan),
-    signalsOf: () => ok(signals),
+    recentScans: (n = 2) => ok([scan, { ...scan, id: 0, created_at: ago(1.1), verdict: "WATCH", news: [], opportunities: [] }].slice(0, n)),
+    signalsOf: (scanId) => ok(signals.filter((s) => s.scan_id === +scanId)),
     signal: (id) => ok(signals.find((s) => s.id === +id) || null),
     recentSignals: () => ok(signals.filter((s) => s.status === "TRADE")),
     instruments: () => ok(insts),

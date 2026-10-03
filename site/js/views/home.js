@@ -59,12 +59,17 @@ const ATTENTE_MAX = 8 * 60_000; // au-delà, on prévient que GitHub est lent
 
 export async function render(main, ctx) {
   const me = ctx.me;
-  const [scan, mine, newIdeas, membres] = await Promise.all([backend.latestScan(), backend.trades({ userId: me.id, limit: 300 }),
+  const [scans, mine, newIdeas, membres] = await Promise.all([backend.recentScans(2), backend.trades({ userId: me.id, limit: 300 }),
     me.is_admin ? backend.unseenIdeas().catch(() => 0) : Promise.resolve(0),
     me.is_admin ? backend.members().catch(() => []) : Promise.resolve([])]);
   const aValider = membres.filter((m) => !m.approved).length;
   const pseudos = membres.filter((m) => m.approved && m.pseudo_pending && m.id !== me.id).length;
-  const sigs = scan ? await backend.signalsOf(scan.id) : [];
+  // Les 2 derniers scans : tout le dernier, plus les setups du précédent qui n'y sont plus (même paire + même sens = on garde le plus récent).
+  const scan = scans[0] || null, prev = scans[1] || null;
+  const [sigsNow, sigsPrev] = await Promise.all([scan ? backend.signalsOf(scan.id) : [], prev ? backend.signalsOf(prev.id).catch(() => []) : []]);
+  const cle = (s) => `${s.instrument_key}|${s.direction}`;
+  const deja = new Set(sigsNow.map(cle));
+  const sigs = [...sigsNow, ...sigsPrev.filter((s) => !deja.has(cle(s))).map((s) => ({ ...s, precedent: prev.created_at }))];
   // Levier maximum Kraken de chaque paire (pour le levier conseillé).
   const maxLev = new Map((await backend.instrumentsByKeys([...new Set(sigs.map((s) => s.instrument_key))]).catch(() => []))
     .map((i) => [i.key, +i.max_leverage || 1]));
@@ -85,7 +90,7 @@ export async function render(main, ctx) {
         <h1 id="verdict-titre">${scan ? icon + " " : ""}${esc(titre)}</h1>
         <p id="verdict-sous">${esc(sous)}</p>
         <div class="ligne" id="bilan"></div>
-        <p class="small">${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)}) · ` : ""}prochain vers ${nextScan()}</p>
+        <p class="small">${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)})${prev ? ` · précédent ${dt(prev.created_at).split(" ")[1] || dt(prev.created_at)}` : ""} · ` : ""}prochain vers ${nextScan()}</p>
       </div>
     </section>
 
@@ -172,7 +177,7 @@ export async function render(main, ctx) {
       p.textContent = sous0;
     } else if (tp || sl) {
       h1.textContent = [tp ? `🎯 ${tp} TP touché${tp > 1 ? "s" : ""}` : "", sl ? `❌ ${sl} SL touché${sl > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
-      p.textContent = `Sur les ${sigs.length} setup${sigs.length > 1 ? "s" : ""} du dernier scan. ${enJeu ? `${enJeu} encore en jeu : regarde les cartes ci-dessous.` : "Plus rien en jeu : attends le prochain scan."}`;
+      p.textContent = `Sur les ${sigs.length} setup${sigs.length > 1 ? "s" : ""} des ${prev ? "2 derniers scans" : "dernier scan"}. ${enJeu ? `${enJeu} encore en jeu : regarde les cartes ci-dessous.` : "Plus rien en jeu : attends le prochain scan."}`;
     } else {
       h1.textContent = titre0; p.textContent = sous0;
     }
