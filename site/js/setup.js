@@ -41,6 +41,9 @@ export function touches(s, candles = []) {
   return { hit: best ? `tp${best}` : null, tpAvant: best, entered };
 }
 
+/** Stop minimal (% du prix), comme le bot (min_sl_pct) : en dessous, le setup n'est pas jouable. */
+export const STOP_MIN_PCT = 0.35;
+
 export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   const lo = +s.entry_low, hi = +s.entry_high, sl = +s.sl, tp1 = +s.tp1;
   const L = isLong(s);
@@ -60,6 +63,12 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
     }
     return { code: "parti", ton: "", icone: "🏃", titre: `TP${n} touché sans nous`, tp: n,
       texte: "Le prix a atteint l'objectif avant que l'entrée soit confirmée. On ne court jamais après un mouvement." };
+  }
+  const eRef = L ? hi : lo; // entrée la moins bonne de la zone
+  const slPct = eRef > 0 && sl > 0 ? (Math.abs(eRef - sl) / eRef) * 100 : null;
+  if (slPct != null && slPct < STOP_MIN_PCT) {
+    return { code: "serre", ton: "short", icone: "🚫", titre: "Stop trop serré : ne pas prendre",
+      texte: `Le stop n'est qu'à ${pct(slPct, 2)} de l'entrée : une simple mèche le touche et les frais mangent le reste. Le bot ne propose plus ce genre de setup (stop minimum ${String(STOP_MIN_PCT).replace(".", ",")} %) : attends le prochain scan.` };
   }
   if (s.expires_at && new Date(s.expires_at).getTime() < now) {
     return { code: "expire", ton: "", icone: "⌛", titre: "Expiré",
@@ -216,7 +225,7 @@ export const PROCHE_PCT = 0.5;
  * ph = résultat de phase() (null tant que le prix n'est pas lu).
  */
 export function espace(s, ph) {
-  if (ph && ["stop", "tp", "parti", "expire"].includes(ph.code)) return "fini";
+  if (ph && ["stop", "tp", "parti", "expire", "serre"].includes(ph.code)) return "fini";
   if (ph && (["go", "condition", "zone"].includes(ph.code) || (ph.code === "attendre" && ph.dist != null && ph.dist <= PROCHE_PCT))) return "imminent";
   const net = scenario(s, 1);
   if (net && net.tout != null && net.tout <= 0) return "fragile"; // les frais Kraken mangent le gain : jamais dans « plus solides »

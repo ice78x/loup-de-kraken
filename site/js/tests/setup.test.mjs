@@ -154,9 +154,18 @@ test("paire spot tradée en perpétuel : x10 → liquidation à ≈ 5 %, pas « 
 });
 
 test("prix collé à la zone : pas de « 0 % », on écrit l'écart en prix", () => {
-  const p = phase({ ...short, entry_low: 4145.1, entry_high: 4148, sl: 4153.9, tp1: 4130 }, 4145, { now: NOW });
+  const p = phase({ ...short, entry_low: 4145.1, entry_high: 4148, sl: 4165, tp1: 4130 }, 4145, { now: NOW });
   assert.equal(p.code, "attendre");
   assert.doesNotMatch(p.texte, / 0 %/);
   assert.match(p.texte, /0,1 \$/);
   assert.equal(p.titre, "Presque dans la zone");
+});
+
+test("stop trop serré (PAXG du 03/10 : 0,06 %) → « ne pas prendre », rangé dans Terminés", async () => {
+  const { phase, espace } = await import("../setup.js");
+  const s = { status: "TRADE", direction: "SHORT", entry_low: 4144.8, entry_high: 4145.1, sl: 4147.3, tp1: 4140.1, tp2: 4134.2, tp3: 4117.5,
+    quote: "USD", score: 80, expires_at: new Date(Date.now() + 3600e3).toISOString() };
+  const ph = phase(s, 4145);
+  assert.equal(ph.code, "serre");
+  assert.equal(espace(s, ph), "fini");
 });

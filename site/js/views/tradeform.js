@@ -3,6 +3,7 @@
 // (marge isolée, perte au SL ou à la liquidation, gains aux TP, frais Kraken réels de la grille officielle).
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
+import { STOP_MIN_PCT } from "../setup.js";
 import { getMode, hasPerp, krakenFees, nomActif, perpSymbol, venueEffective } from "../fees.js";
 import { planFromQty, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
 import { busy, esc, eur, num, pct, pq, px, rr, sym, toast } from "../ui.js";
@@ -22,6 +23,8 @@ export function tradeForm(host, o) {
   const inZone = s && o.price && o.price >= s.entry_low && o.price <= s.entry_high;
   // Prix déjà passé de l'autre côté de la zone, vers le stop (ex. NEAR du 03/10 : zone 4,68–4,69, prix 4,65, stop 4,64).
   const coteStop = !!(s && o.price && (dir0 === "LONG" ? o.price < s.entry_low : o.price > s.entry_high));
+  const eRef = s ? (dir0 === "LONG" ? +s.entry_high : +s.entry_low) : 0;
+  const serre = !!(s && eRef > 0 && +s.sl > 0 && (Math.abs(eRef - s.sl) / eRef) * 100 < STOP_MIN_PCT);
   const entry0 = s ? (inZone || coteStop ? o.price : (dir0 === "LONG" ? s.entry_high : s.entry_low)) : o.price;
   const budget = riskBudget(o.me, o.trades);
   const venue = venueEffective(o.inst); // futures perpétuels (par défaut) ou spot, selon Mon compte
@@ -88,9 +91,11 @@ export function tradeForm(host, o) {
     </div>
     <label class="champ"><span>Note (facultatif)</span><input name="notes" maxlength="300" placeholder="Pourquoi je prends ce trade"></label>
     <div id="plan" aria-live="polite"></div>
-    ${s?.status === "WATCH" || coteStop ? `<label class="alerte rouge interrupteur" style="display:flex">
+    ${s?.status === "WATCH" || coteStop || serre ? `<label class="alerte rouge interrupteur" style="display:flex">
       <input type="checkbox" name="sansconfirm">
-      <span>${coteStop ? `<b>⚠️ Le prix (${pq(o.price, o.inst.quote)}) est déjà passé ${dir0 === "LONG" ? "SOUS" : "AU-DESSUS de"} la zone d'entrée, vers le stop.</b>
+      <span>${serre ? `<b>🚫 Stop trop serré : ${pct((Math.abs(eRef - s.sl) / eRef) * 100, 2)} de l'entrée.</b> Une simple mèche le touche et les frais mangent le reste
+        (le bot exige maintenant au moins ${String(STOP_MIN_PCT).replace(".", ",")} %).`
+        : coteStop ? `<b>⚠️ Le prix (${pq(o.price, o.inst.quote)}) est déjà passé ${dir0 === "LONG" ? "SOUS" : "AU-DESSUS de"} la zone d'entrée, vers le stop.</b>
         Le scénario du bot est abîmé : le stop est tout près (${pct((Math.abs(o.price - s.sl) / o.price) * 100, 2)}) et un simple mouvement normal le touche.`
         : `<b>⚠️ Ce setup n'est PAS validé par le bot.</b> Il manque encore : ${esc(s.trigger_text || "la confirmation 15 min")}.
         Entrer maintenant, c'est parier sans la confirmation (c'est souvent là qu'on se fait sortir).`}
@@ -247,8 +252,8 @@ export function tradeForm(host, o) {
     update();
     if (!plan?.ok || plan.blocking.length) { toast(plan?.blocking?.[0] || plan?.errors?.[0] || "Vérifie les champs.", true); return; }
     if (Date.now() - ramene < 2500) { toast("La quantité vient d'être ramenée au maximum possible : vérifie-la, puis enregistre.", true); return; }
-    if ((s?.status === "WATCH" || coteStop) && !f.elements.sansconfirm?.checked) {
-      toast(coteStop ? "Le prix est déjà passé vers le stop : attends qu'il revienne dans la zone, ou coche la case rouge pour entrer quand même."
+    if ((s?.status === "WATCH" || coteStop || serre) && !f.elements.sansconfirm?.checked) {
+      toast(serre ? "Stop trop serré : ce setup n'est pas jouable. Coche la case rouge seulement si tu choisis d'entrer quand même." : coteStop ? "Le prix est déjà passé vers le stop : attends qu'il revienne dans la zone, ou coche la case rouge pour entrer quand même."
         : "Ce setup n'est pas encore validé par le bot : attends la confirmation, ou coche la case rouge pour entrer quand même.", true); return;
     }
     const x = base();
