@@ -436,3 +436,4 @@ ol.etapes li { padding-left: 4px; }
 .form > *, #perp-out > * { min-width: 0; }
 #perp-out { display: grid; gap: 10px; min-width: 0; }
 #bilan { margin-top: 6px; gap: 6px; }
+.alerte.rouge.interrupteur { background: var(--short-fond); border: 1px solid var(--short); }

@@ -142,3 +142,21 @@ test("condition remplie puis scan qui ne valide pas : on ne redemande pas de sca
   assert.equal(ph.code, "revu");
   assert.match(ph.texte, /volume trop faible/);
 });
+
+test("paire spot tradée en perpétuel : x10 → liquidation à ≈ 5 %, pas « liquidé avant le stop » pour un stop à 2,5 %", () => {
+  const s = { ...long, entry_low: 100, entry_high: 100, sl: 97.5, tp1: 103, tp2: 105, tp3: 108, venue: "spot" };
+  const x1 = scenario(s, 1, 3), x10 = scenario(s, 10, 3);       // levier max de la paire SPOT = x3 (ne doit pas compter)
+  assert.equal(x10.liqAvant, false);
+  assert.ok(Math.abs(x10.liqPct - 5) < 1e-9);
+  assert.ok(Math.abs(x10.perte - 10 * x1.perte) < 1e-9);         // même mise, position 10× plus grosse → perte 10×
+  assert.ok(x10.perte > 25 && x10.perte < 26);
+  assert.ok(Math.abs(levierConseille(s, { risk_pct: 1 }, 3).liqPct - (100 / levierConseille(s, { risk_pct: 1 }, 3).lev - 5)) < 1e-9);
+});
+
+test("prix collé à la zone : pas de « 0 % », on écrit l'écart en prix", () => {
+  const p = phase({ ...short, entry_low: 4145.1, entry_high: 4148, sl: 4153.9, tp1: 4130 }, 4145, { now: NOW });
+  assert.equal(p.code, "attendre");
+  assert.doesNotMatch(p.texte, / 0 %/);
+  assert.match(p.texte, /0,1 \$/);
+  assert.equal(p.titre, "Presque dans la zone");
+});

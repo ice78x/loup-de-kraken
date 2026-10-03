@@ -180,13 +180,14 @@ export async function render(main, ctx) {
     const liqAvant = sl > 0 && (L ? sl <= liq : sl >= liq);
     const auStop = sl > 0 ? (liqAvant ? -(mise + fraisEntree) : res(sl, ft)) : null;
     const auTp = tp > 0 ? res(tp, fm) : null;
-    const pcm = (x) => pct((x / mise) * 100, 1), pcs = (x) => (bal > 0 ? pct((x / bal) * 100, 2) : "—");
+    const signe = (v, d) => (v > 0 ? "+" : "") + pct(v, d);
+    const pcm = (x) => signe((x / mise) * 100, 1), pcs = (x) => (bal > 0 ? signe((x / bal) * 100, 2) : "—");
     const sens = (x) => (x == null ? "" : x >= 0 ? "gain" : "perte");
     const bouge = [-10, -5, -2, 2, 5, 10];
     out.innerHTML = `
       <dl class="chiffres">
         <div><dt>Valeur de la position</dt><dd class="num">${eur(valeur)}</dd></div>
-        <div><dt>Ta mise (marge isolée x${lev})</dt><dd class="num">${eur(mise)}</dd><span class="small muted">${pcs(mise)} de ton solde</span></div>
+        <div><dt>Ta mise (marge isolée x${lev})</dt><dd class="num">${eur(mise)}</dd><span class="small muted">${bal > 0 ? pct((mise / bal) * 100, 2) : "—"} de ton solde</span></div>
         <div><dt>Frais d'entrée</dt><dd class="num">${eur(-fraisEntree)}</dd></div>
         <div><dt>Liquidation ≈</dt><dd class="num perte">${px(liq)} $</dd><span class="small muted">à ${pct(d * 100, 1)} de mouvement · tu perds ta mise</span></div>
         <div><dt>Si le stop est touché</dt><dd class="num ${sens(auStop)}">${auStop == null ? "pas de stop" : eur(auStop, true)}</dd>

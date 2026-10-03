@@ -3,19 +3,24 @@ import { candleChart } from "../charts.js";
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
 import { krakenLink, ohlc, prices } from "../market.js";
-import { TP_SPLIT, closePart, pnlBreakdown } from "../sizing.js";
+import { TP_SPLIT, closePart, pnlBreakdown, recalculerFrais } from "../sizing.js";
+import { krakenFees } from "../fees.js";
 import { STRAT, busy, cls, dt, esc, eur, modal, num, pq, px, rr, toast } from "../ui.js";
 
 const ev = (text) => ({ at: new Date().toISOString(), by: "membre", text });
 
 export async function render(main, ctx, id) {
   const t = await backend.trade(id);
-  if (!t) { main.innerHTML = '<div class="vide"><strong>Trade introuvable</strong></div>'; return; }
+  if (!t) { main.innerHTML = '<a href="#/trades" class="muted small">← Mes trades</a><div class="vide"><strong>Trade introuvable</strong><p>Il a peut-être été supprimé.</p></div>'; return; }
   const mine = t.user_id === ctx.me.id;
   const px0 = await prices([t], { fx: false });
   const price = px0.get(t)?.last ?? null;
   const b = pnlBreakdown(t, price);
   const dir = t.direction === "LONG" ? "gain" : "perte";
+  // Trade enregistré avec des frais plus hauts que ceux du marché utilisé (ex. frais spot alors que tu trades en futures) ?
+  const grille = krakenFees(t);
+  const nouveauPct = +t.fee_pct <= 0.4 + 1e-9 ? grille.maker : grille.taker;
+  const refait = mine && t.status !== "annule" && +t.fee_pct > grille.taker + 1e-9 ? recalculerFrais(t, nouveauPct) : null;
 
   main.innerHTML = `
     <a href="${mine ? "#/trades" : `#/membre/${t.user_id}`}" class="muted small">← Retour</a>
@@ -40,11 +45,16 @@ export async function render(main, ctx, id) {
       <div><dt>Quantité restante</dt><dd class="num">${+(+t.qty_remaining).toPrecision(6)} / ${+(+t.qty).toPrecision(6)}</dd></div>
     </dl>
 
+    ${refait ? `<div class="alerte" id="refrais"><b>⚠ Ce trade a été enregistré avec des frais de ${String(+t.fee_pct).replace(".", ",")} %</b> (grille spot).
+      Si tu l'as passé en <b>futures perpétuels</b>, Kraken prend ${String(nouveauPct).replace(".", ",")} % : ${t.status === "ouvert" ? "déjà encaissé" : "résultat"}
+      <b class="${cls(+t.realized_pnl_eur)}">${eur(+t.realized_pnl_eur, true)}</b> → <b class="${cls(refait.realized)}">${eur(refait.realized, true)}</b>.
+      <p style="margin:8px 0 0"><button class="btn principal mini" id="refrais-ok">Recalculer avec les frais ${esc(grille.label)}</button></p></div>` : ""}
+
     ${t.status === "ouvert" && t.advice ? `<div class="alerte"><b>Conseil du bot</b> (${dt(t.advice_at)}) : ${esc(t.advice)}</div>` : ""}
 
     <div class="split section">
       <figure><div class="graph" id="chart"></div><figcaption>Bougies 15 min en direct depuis Kraken.</figcaption></figure>
-      <div class="bloc">${ladder({ direction: t.direction, entryLow: +t.entry_price, entryHigh: +t.entry_price, sl: +t.sl > 0 ? +t.sl : (t.liq_price ? +t.liq_price : null), slLabel: +t.sl > 0 ? "SL" : "Liq.", tps: [t.tp1, t.tp2, t.tp3].map((x) => x && +x), price })}</div>
+      <div class="bloc">${ladder({ direction: t.direction, entryLow: +t.entry_price, entryHigh: +t.entry_price, sl: +t.sl > 0 ? +t.sl : (t.liq_price ? +t.liq_price : null), slLabel: +t.sl > 0 ? "SL" : "Liq.", tps: [t.tp1, t.tp2, t.tp3].map((x) => x && +x), price, riskRef: +t.risk_eur > 0 && +t.qty > 0 ? +t.risk_eur / (+t.qty * (+t.eur_per_quote || 1)) : null })}</div>
     </div>
 
     ${mine && t.status === "ouvert" ? `<section class="section"><h2>Gérer</h2>
@@ -73,6 +83,15 @@ export async function render(main, ctx, id) {
   const reload = () => render(main, ctx, id);
   if (!mine) return;
 
+  main.querySelector("#refrais-ok")?.addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    await backend.updateTrade(t.id, {
+      fee_pct: nouveauPct, realized_pnl_eur: +refait.realized.toFixed(4), risk_eur: +refait.riskEur.toFixed(4),
+      ...(refait.rMultiple != null ? { r_multiple: refait.rMultiple } : {}),
+      events: [...(t.events || []), ev(`Frais recalculés : ${t.fee_pct} % → ${nouveauPct} % (${grille.label}). Résultat ${eur(+t.realized_pnl_eur, true)} → ${eur(refait.realized, true)}`)],
+    });
+    toast("Frais recalculés. Ton solde est mis à jour.");
+    ctx.go("#/trades"); setTimeout(() => ctx.go(`#/trade/${t.id}`), 50);
+  }));
   main.querySelector("#del")?.addEventListener("click", (e) => {
     if (!confirm("Supprimer définitivement ce trade ?")) return;
     busy(e.currentTarget, async () => { await backend.deleteTrade(t.id); toast("Trade supprimé."); ctx.go("#/trades"); });

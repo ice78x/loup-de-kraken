@@ -15,6 +15,21 @@ let MODE = "futures";
 export const setMode = (m) => { MODE = m === "spot" ? "spot" : "futures"; };
 export const getMode = () => MODE;
 
+// Perpétuels réellement disponibles chez Kraken pour la France (lus par le bot) : base → symbole (ex. BTC → PF_XBTUSD).
+// null = liste pas encore chargée (on suppose alors qu'un perpétuel existe).
+let PERPS = null;
+export function setPerps(list) {
+  if (list == null) { PERPS = null; return; }
+  PERPS = new Map();
+  for (const i of list || []) {
+    const b = String(i.base || "").toUpperCase();
+    if (b && !PERPS.has(b)) PERPS.set(b, i.api_symbol || i.display);
+  }
+}
+const baseOf = (inst) => String(inst?.base || String(inst?.display || "").split("/")[0]).toUpperCase();
+/** Un perpétuel Kraken existe-t-il pour cet actif ? (true si la liste n'est pas connue) */
+export const hasPerp = (inst) => inst?.venue === "futures" || PERPS == null || PERPS.has(baseOf(inst)) || (baseOf(inst) === "XBT" && PERPS.has("BTC"));
+
 const isStable = (inst) => {
   const [b0, q0] = String(inst?.display || "").split("/");
   return STABLES.has(String(inst?.base || b0 || "").toUpperCase()) && STABLES.has(String(inst?.quote || q0 || "").toUpperCase());
@@ -23,14 +38,34 @@ const isStable = (inst) => {
 /** Marché réellement utilisé pour ce trade : le perpétuel en mode futures (sauf xStocks et stablecoins), sinon celui de la paire. */
 export function venueEffective(inst) {
   if (inst?.venue === "futures") return "futures";
-  if (MODE === "futures" && inst?.asset_class !== "xstock" && !isStable(inst)) return "futures";
+  if (MODE === "futures" && inst?.asset_class !== "xstock" && !isStable(inst) && hasPerp(inst)) return "futures";
   return "spot";
+}
+
+/** Nom simple de l'actif : « PF_XBTUSD » → « BTC », « LINK/USD » → « LINK ». */
+export function nomActif(inst) {
+  const d = String(inst?.display || "");
+  if (/^PF_/i.test(d)) {
+    const b = String(inst?.base || d.slice(3).replace(/(USD|EUR|USDT|USDC)$/i, "")).toUpperCase();
+    return b === "XBT" ? "BTC" : b;
+  }
+  return d.split("/")[0];
+}
+
+/** Le club trade uniquement les perpétuels (mode futures) : on ne garde que les contrats PF_… (si la liste en contient). */
+export function perpsSeulement(list) {
+  if (MODE !== "futures") return list;
+  const p = (list || []).filter((i) => i.venue === "futures");
+  return p.length ? p : list;
 }
 
 /** Symbole du perpétuel Kraken correspondant (indicatif) : BTC/USD → PF_XBTUSD. */
 export function perpSymbol(inst) {
   if (inst?.venue === "futures") return inst.api_symbol || inst.display;
-  const base = String(inst?.base || String(inst?.display || "").split("/")[0]).toUpperCase().replace(/^BTC$/, "XBT");
+  const b = baseOf(inst);
+  if (PERPS?.has(b)) return PERPS.get(b);
+  if (PERPS) return null; // aucun perpétuel pour cet actif
+  const base = b.replace(/^BTC$/, "XBT");
   return base ? `PF_${base}USD` : null;
 }
 

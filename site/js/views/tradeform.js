@@ -3,7 +3,7 @@
 // (marge isolée, perte au SL ou à la liquidation, gains aux TP, frais Kraken réels de la grille officielle).
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
-import { krakenFees, perpSymbol, venueEffective } from "../fees.js";
+import { getMode, hasPerp, krakenFees, nomActif, perpSymbol, venueEffective } from "../fees.js";
 import { planFromQty, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
 import { busy, esc, eur, num, pct, pq, px, rr, sym, toast } from "../ui.js";
 
@@ -25,22 +25,27 @@ export function tradeForm(host, o) {
   const venue = venueEffective(o.inst); // futures perpétuels (par défaut) ou spot, selon Mon compte
   const perp = venue === "futures";
   const maxLev = perp ? 10 : Math.max(1, Math.min(10, o.inst.max_leverage || 10));
-  const baseName = esc(String(o.inst.display || "").split("/")[0]);
+  const baseName = esc(nomActif(o.inst));
   const q = sym(o.inst.quote).trim() || o.inst.quote || "";
   const free = o.me.guardrails !== true; // garde-fous du club : désactivés par défaut, actifs seulement si le membre les coche
   const grille = krakenFees(o.inst);
   const fees = { taker: o.feeTaker ?? grille.taker, maker: o.feeMaker ?? grille.maker };
   const fp = (x) => String(+x.toFixed(3)).replace(".", ",") + " %";
+  // Prix au pas Kraken (décimales de la paire) : sinon Kraken peut refuser le TP/SL (ex. 7 décimales sur PUMP).
+  const pd = Number.isInteger(o.inst.pair_decimals) && o.inst.pair_decimals >= 0 && o.inst.pair_decimals <= 12 ? o.inst.pair_decimals : null;
+  const rp = (x) => (x == null || !isFinite(x) ? "" : pd == null ? r6(x) : String(+(+x).toFixed(pd)));
   const order0 = (() => { try { return localStorage.getItem("ldk-order-type") || "limit"; } catch { return "limit"; } })();
 
+  const sansPerp = getMode() === "futures" && !perp && o.inst.asset_class !== "xstock" && !hasPerp(o.inst);
   host.innerHTML = `
   <form class="form" novalidate>
+    ${sansPerp ? `<p class="alerte small">📍 <b>Pas de futures perpétuel Kraken pour ${baseName}</b> : ce trade se fait en <b>spot</b> (frais 0,40 % / 0,80 %).</p>` : ""}
     <div class="choix" role="radiogroup" aria-label="Sens">
       <label class="long"><input type="radio" name="dir" value="LONG" ${dir0 === "LONG" ? "checked" : ""}><span>LONG ↑ (acheter)</span></label>
       <label class="short"><input type="radio" name="dir" value="SHORT" ${dir0 === "SHORT" ? "checked" : ""}><span>SHORT ↓ (vendre)</span></label>
     </div>
 
-    <label class="champ"><span>Prix d'entrée (limite)${q ? ` en ${esc(q)}` : ""}</span><input name="entry" inputmode="decimal" value="${r6(entry0)}">
+    <label class="champ"><span>Prix d'entrée (limite)${q ? ` en ${esc(q)}` : ""}</span><input name="entry" inputmode="decimal" value="${rp(entry0)}">
       <small>${o.price ? `Prix actuel ${pq(o.price, o.inst.quote)}` : "Prix actuel indisponible"}</small></label>
 
     <div class="choix" role="radiogroup" aria-label="Type d'ordre">
@@ -67,12 +72,12 @@ export function tradeForm(host, o) {
       <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${o.levRef ? Math.min(maxLev, o.levRef) : dir0 === "SHORT" && !perp ? Math.min(2, maxLev) : 1}">
       <small>${o.levRef ? `Levier conseillé pour ce trade : <b>x${o.levRef}</b>. ` : ""}Pour une même quantité, le levier réduit la marge bloquée et rapproche la liquidation ; il ne change <b>pas</b> ta perte au SL.</small></label>
 
-    <label class="champ"><span>Stop loss (SL) — facultatif</span><input name="sl" inputmode="decimal" value="${r6(s?.sl)}" placeholder="aucun">
+    <label class="champ"><span>Stop loss (SL) — facultatif</span><input name="sl" inputmode="decimal" value="${rp(s?.sl)}" placeholder="aucun">
       <small>Là où tu coupes si ça va mal. Sans stop, tu peux perdre la marge du trade (liquidation), jamais plus.</small></label>
     <div class="trois">
-      <label class="champ"><span>TP1 · 30 %</span><input name="tp1" inputmode="decimal" value="${r6(s?.tp1)}"></label>
-      <label class="champ"><span>TP2 · 40 %</span><input name="tp2" inputmode="decimal" value="${r6(s?.tp2)}"></label>
-      <label class="champ"><span>TP3 · 30 %</span><input name="tp3" inputmode="decimal" value="${r6(s?.tp3)}"></label>
+      <label class="champ"><span>TP1 · 30 %</span><input name="tp1" inputmode="decimal" value="${rp(s?.tp1)}"></label>
+      <label class="champ"><span>TP2 · 40 %</span><input name="tp2" inputmode="decimal" value="${rp(s?.tp2)}"></label>
+      <label class="champ"><span>TP3 · 30 %</span><input name="tp3" inputmode="decimal" value="${rp(s?.tp3)}"></label>
     </div>
 
     <div class="choix" role="radiogroup" aria-label="Type de trade">
@@ -81,6 +86,11 @@ export function tradeForm(host, o) {
     </div>
     <label class="champ"><span>Note (facultatif)</span><input name="notes" maxlength="300" placeholder="Pourquoi je prends ce trade"></label>
     <div id="plan" aria-live="polite"></div>
+    ${s?.status === "WATCH" ? `<label class="alerte rouge interrupteur" style="display:flex">
+      <input type="checkbox" name="sansconfirm">
+      <span><b>⚠️ Ce setup n'est PAS validé par le bot.</b> Il manque encore : ${esc(s.trigger_text || "la confirmation 15 min")}.
+        Entrer maintenant, c'est parier sans la confirmation (c'est souvent là qu'on se fait sortir).
+        Coche seulement si tu choisis d'entrer quand même.</span></label>` : ""}
     <button class="btn principal plein" type="submit">Enregistrer le trade</button>
   </form>`;
 
@@ -186,6 +196,9 @@ export function tradeForm(host, o) {
     e.preventDefault();
     update();
     if (!plan?.ok || plan.blocking.length) { toast(plan?.blocking?.[0] || plan?.errors?.[0] || "Vérifie les champs.", true); return; }
+    if (s?.status === "WATCH" && !f.elements.sansconfirm?.checked) {
+      toast("Ce setup n'est pas encore validé par le bot : attends la confirmation, ou coche la case rouge pour entrer quand même.", true); return;
+    }
     const x = base();
     const lev = +f.elements.lev.value;
     const mode = f.elements.mode.value;
@@ -199,7 +212,7 @@ export function tradeForm(host, o) {
         leverage: lev, qty: plan.qty, qty_remaining: plan.qty, risk_eur: +plan.lossAtSlEur.toFixed(4),
         eur_per_quote: o.eurPerQuote, fee_pct: x.entryIsMaker ? fees.maker : fees.taker, balance_at_entry: +o.me.balance_eur,
         realized_pnl_eur: -(plan.entryFeeEur || 0), strategy: s?.strategy || "manuel", notes: f.elements.notes.value || null,
-        events: [{ at: new Date().toISOString(), text: `Ouverture ${mode === "reel" ? "réelle" : "paper"} à ${x.entry} · ${+plan.qty.toPrecision(6)} ${o.inst.display.split("/")[0]} · x${lev}` }],
+        events: [{ at: new Date().toISOString(), text: `Ouverture ${mode === "reel" ? "réelle" : "paper"} à ${x.entry} · ${+plan.qty.toPrecision(6)} ${nomActif(o.inst)} · x${lev}` }],
       });
       toast("Trade enregistré. Le bot le suivra à chaque scan.");
       o.go(`#/trade/${t.id}`);

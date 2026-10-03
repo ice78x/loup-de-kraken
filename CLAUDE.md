@@ -29,6 +29,10 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
    Côté site, le membre choisit la **quantité** (comme sur Kraken, marge isolée) : le site montre la perte au SL / à la liquidation avant d'enregistrer.
    Levier conseillé (`levierConseille` dans `site/js/setup.js`) : liquidation ≥ 2× plus loin que le stop, et mise de 25 % du solde ≈ risque habituel.
    Frais : grille Kraken dans `site/js/fees.js` ⇄ `bot/src/kraken_assistant/risk/fees.py` (à garder identiques, avec la date de vérification).
+   Niveaux des setups arrondis au pas de prix Kraken (`snap_to_tick` dans `strategies/base.py` : stop éloigné, TP rapprochés) ;
+   le site arrondit aussi les prix pré-remplis aux décimales de la paire (`pair_decimals`).
+   **Le club trade uniquement les futures perpétuels Kraken (PF_…)** : `perps_only=True` dans `bot/.../config.py` (le bot n'analyse que les PF_),
+   `trade_mode='futures'` par défaut côté site (`fees.js` : `perpsSeulement`, `venueEffective`, liste réelle des perpétuels via `setPerps`).
 4. Jamais « trade sûr », « gain garanti », « aucun risque », « machine à cash ».
 5. La clé Supabase secrète (`sb_secret_…`, ou l'ancienne `service_role`) ne va **que** dans les secrets GitHub. Le site n'utilise que la clé publique
    (`sb_publishable_…` / `anon`) + RLS. Les clés `sb_` ne sont pas des JWT : jamais dans `Authorization: Bearer` (voir `cloud/supabase_rest.py`).

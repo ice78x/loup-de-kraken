@@ -49,6 +49,8 @@ function supabaseBackend() {
       }
       return out.sort((a, b) => String(a.display).localeCompare(String(b.display)));
     },
+    // Perpétuels Kraken disponibles (pour savoir si une paire du bot peut se trader en futures).
+    perps: () => q(sb.from("instruments").select("key,display,base,api_symbol,max_leverage").eq("venue", "futures").limit(1000)),
     instrumentsByKeys: (keys) => (keys.length ? q(sb.from("instruments").select("*").in("key", keys)) : Promise.resolve([])),
     instrument: async (key) => (await q(sb.from("instruments").select("*").eq("key", key).limit(1)))[0] || null,
     // Signaux du bot sur une paire (sans les bougies, plus léger), du plus récent au plus ancien.

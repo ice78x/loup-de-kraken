@@ -106,7 +106,9 @@ def select_candidates(app: App, insts: list[Instrument], tickers: dict[str, Tick
                       news: list[NewsItem], position_keys: set[str], focus: set[str] | None,
                       mode: str) -> tuple[list[Instrument], dict]:
     s = app.settings
-    fut_verified = any(i.venue == "futures" and i.account_access == "vérifié" for i in insts)
+    if s.perps_only:  # le club ne trade que les perpétuels : on n'analyse que les contrats PF_…
+        insts = [i for i in insts if i.venue == "futures"]
+    fut_verified = s.perps_only or any(i.venue == "futures" and i.account_access == "vérifié" for i in insts)
     stats = {"tradables": len(insts), "avec_ticker": 0, "liquides": 0}
     best: dict[tuple[str, str], tuple[float, Instrument, float]] = {}
     for i in insts:
@@ -298,7 +300,7 @@ def _scan(app: App, mode: str, focus: set[str] | None) -> ScanReport:
             continue
         a = analyses[st.inst_key]
         inst = a.inst
-        if inst.venue == "futures" and inst.account_access != "vérifié":
+        if inst.venue == "futures" and inst.account_access != "vérifié" and not s.perps_only:
             st.status = WATCH
             st.rejections.append("compte futures non vérifié (ajoute une clé API futures en lecture)")
             continue

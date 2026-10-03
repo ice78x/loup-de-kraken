@@ -4,7 +4,7 @@
 import { backend, DEMO } from "./data.js";
 import { esc, toast } from "./ui.js";
 import { majSolde } from "./solde.js";
-import { setMode } from "./fees.js";
+import { setMode, setPerps } from "./fees.js";
 import * as home from "./views/home.js";
 import * as signal from "./views/signal.js";
 import * as trades from "./views/trades.js";
@@ -86,6 +86,7 @@ async function route() {
   // Solde à jour avec les gains/pertes des trades (recalculé à chaque page, rien n'est modifié dans la base).
   try { await majSolde(ctx, backend); } catch { /* on garde le solde enregistré */ }
   setMode(ctx.me?.trade_mode); // frais / levier / liquidation : futures perpétuels par défaut, ou spot (Mon compte)
+  if (!perpsCharges) { perpsCharges = true; try { setPerps(await backend.perps()); } catch { perpsCharges = false; } }
   if (!document.querySelector(".shell")) root.innerHTML = shell();
   const hash = location.hash || "#/";
   const match = ROUTES.find(([re]) => re.test(hash));
@@ -108,6 +109,7 @@ async function route() {
 }
 
 let lastUid;
+let perpsCharges = false;
 backend.onAuth(async (s) => {
   const uid = s?.user?.id || null;
   if (uid === lastUid) return; // même personne : on ne recharge pas la page

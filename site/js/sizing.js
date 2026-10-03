@@ -302,3 +302,23 @@ export function pnlBreakdown(t, price) {
   const exitFee = ok ? fee * price * +t.qty_remaining * fx : null;
   return { entryFee, banked, move, exitFee, ifCloseNow: ok ? realized + move - exitFee : null };
 }
+
+/**
+ * Recalcule un trade enregistré avec d'autres frais (ex. il a été saisi avec les frais spot 0,40 % alors qu'il est passé
+ * en futures perpétuels à 0,02 %). Les ventes déjà faites (TP, clôtures) sont retrouvées à partir du résultat enregistré :
+ * résultat = mouvement du prix − frais × (valeur à l'entrée + valeur des ventes). Rien n'est inventé : mêmes prix, mêmes quantités.
+ * Retourne { realized, rMultiple, riskEur, ventes } (ventes = valeur des sorties, en devise de cotation) ou null si impossible.
+ */
+export function recalculerFrais(t, nouveauPct) {
+  const f = (+t.fee_pct || 0) / 100, g = (+nouveauPct || 0) / 100;
+  const E = +t.entry_price, q = +t.qty, fx = +t.eur_per_quote || 1;
+  if (!(E > 0) || !(q > 0)) return null;
+  const qc = q - (+t.qty_remaining || 0); // quantité déjà vendue
+  const r = (+t.realized_pnl_eur || 0) / fx;
+  const ventes = t.direction === "LONG" ? (r + E * qc + f * E * q) / (1 - f) : (E * qc - f * E * q - r) / (1 + f);
+  if (!isFinite(ventes) || ventes < -1e-9) return null;
+  const realized = (r + (f - g) * (E * q + ventes)) * fx;
+  const sl = +t.sl;
+  const riskEur = sl > 0 ? (q * Math.abs(E - sl) + q * g * (E + sl)) * fx : +t.risk_eur;
+  return { realized, riskEur, ventes, rMultiple: t.status === "ouvert" || !(riskEur > 0) ? null : +(realized / riskEur).toFixed(3) };
+}

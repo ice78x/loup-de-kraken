@@ -1,6 +1,7 @@
 """Modèle de setup, construction des objectifs (TP) et score de confluence."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from ..analysis.breakout import LevelEvent
@@ -133,9 +134,35 @@ def score_setup(st: Setup, a: MarketAnalysis, s: Settings, level_strength: float
     st.score = round(max(0.0, min(100.0, sum(c.values()))), 1)
 
 
+def snap_to_tick(st: Setup, tick: float) -> None:
+    """Arrondit les niveaux au pas de prix Kraken (sinon Kraken refuse l'ordre ou le TP/SL, ex. 7 décimales sur PUMP).
+    Prudent : le stop s'éloigne, les TP se rapprochent de l'entrée, la zone d'entrée s'élargit d'un pas au plus."""
+    if not tick or tick <= 0:
+        return
+    def down(x: float) -> float:
+        return round(math.floor(x / tick + 1e-9) * tick, 12)
+
+    def up(x: float) -> float:
+        return round(math.ceil(x / tick - 1e-9) * tick, 12)
+
+    st.entry_low, st.entry_high = down(st.entry_low), up(st.entry_high)
+    if st.direction == "LONG":
+        st.sl, st.tps, st.invalidation_price = down(st.sl), [down(t) for t in st.tps], down(st.invalidation_price)
+    else:
+        st.sl, st.tps, st.invalidation_price = up(st.sl), [up(t) for t in st.tps], up(st.invalidation_price)
+
+
 def apply_filters(st: Setup, a: MarketAnalysis, s: Settings) -> None:
     """Filtres durs : ils ne dépendent pas du score."""
     inst = a.inst
+    # Stop « respirable » : au moins min_sl_atr15 × ATR 15 min entre l'entrée la moins bonne et le stop.
+    # S'il est plus serré, on l'éloigne (jamais l'inverse) ; le R:R est recalculé juste après et peut alors refuser le setup.
+    if a.atr15 > 0 and abs(st.sizing_entry - st.sl) < s.min_sl_atr15 * a.atr15:
+        ancien = st.sl
+        st.sl = st.sizing_entry - st.sign * s.min_sl_atr15 * a.atr15
+        st.warnings.append(f"stop éloigné à {st.sl:.6g} (au lieu de {ancien:.6g}) : au moins {s.min_sl_atr15:g} × la volatilité "
+                           "d'une bougie 15 min, pour ne pas être sorti par une simple mèche")
+    snap_to_tick(st, getattr(inst, "tick_size", 0) or 0)
     if st.direction == "SHORT" and not inst.can_short:
         st.rejections.append("SHORT impossible sur cet instrument (pas de marge/perp)")
     if st.direction == "LONG" and not inst.can_long:

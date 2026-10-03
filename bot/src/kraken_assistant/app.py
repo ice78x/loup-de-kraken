@@ -92,6 +92,17 @@ class App:
             out.update(mode="LIVE", risk_capital_eur=out["kraken_equity_eur"])
         return out
 
+    def has_perp(self, inst: Instrument) -> bool:
+        """Un perpétuel Kraken négociable existe-t-il pour cet actif (même base) ? Sinon : spot uniquement."""
+        bases = self.state.get("perp_bases")
+        if bases is None:
+            try:
+                bases = {i.base for i in self.discovery.discover() if i.venue == "futures" and i.tradable}
+            except Exception:  # liste indisponible : on ne suppose rien
+                bases = set()
+            self.state["perp_bases"] = bases
+        return inst.base in bases
+
     def fee_for(self, inst: Instrument) -> tuple[float, float, str]:
         """(taker %, maker %, source). Frais réels du compte si clé API, sinon valeurs par défaut."""
         if inst.key in self.fee_cache:
@@ -112,7 +123,7 @@ class App:
         if inst.venue != "spot":
             return s.default_futures_taker_fee_pct, s.default_futures_maker_fee_pct, "défaut (estimation)"
         t, m, label = default_fees(inst.venue, inst.asset_class, inst.base, inst.quote)
-        if label.startswith("spot") and s.execution_venue == "futures":  # tradé sur le perpétuel correspondant
+        if label.startswith("spot") and s.execution_venue == "futures" and self.has_perp(inst):  # tradé sur son perpétuel
             return s.default_futures_taker_fee_pct, s.default_futures_maker_fee_pct, "défaut futures perpétuels (estimation)"
         if label.startswith("spot"):  # spot crypto : valeurs réglables (.env)
             return s.default_spot_taker_fee_pct, s.default_spot_maker_fee_pct, "défaut (estimation)"

@@ -3,6 +3,7 @@
 import { backend } from "../data.js";
 import { prices } from "../market.js";
 import { searchInstruments } from "../search.js";
+import { getMode, nomActif, perpsSeulement } from "../fees.js";
 import { ago, esc, pq } from "../ui.js";
 
 export const ONGLETS = [
@@ -13,7 +14,9 @@ const lienGraph = (i) => `#/graphique/${encodeURIComponent(i.key)}`;
 const NB_PRIX = 30; // prix en direct pour les 30 premières paires de l'onglet (limite du proxy Kraken)
 
 export async function render(main, ctx, onglet = null) {
-  const [insts, scan] = await Promise.all([backend.instruments().catch(() => []), backend.latestScan().catch(() => null)]);
+  const [tous, scan] = await Promise.all([backend.instruments().catch(() => []), backend.latestScan().catch(() => null)]);
+  const insts = perpsSeulement(tous); // le club trade uniquement les perpétuels (Mon compte → Futures)
+  const perps = getMode() === "futures" && insts !== tous;
   const opp = new Map((scan?.opportunities || []).map((o) => [o.display, o]));
   const maj = insts.reduce((m, i) => (i.updated_at && i.updated_at > m ? i.updated_at : m), "");
   const counts = Object.fromEntries(ONGLETS.map(([k]) => [k, insts.filter((i) => classe(i) === k).length]));
@@ -22,7 +25,7 @@ export async function render(main, ctx, onglet = null) {
 
   main.innerHTML = `
     <h1>Graphiques</h1>
-    <p class="muted">${insts.length ? `<b>${insts.length} paires</b> disponibles sur Kraken Pro France${maj ? ` (liste mise à jour ${ago(maj)})` : ""}.` : "La liste arrive après le premier scan du bot."}
+    <p class="muted">${insts.length ? `<b>${insts.length} ${perps ? "futures perpétuels" : "paires"}</b> disponibles sur Kraken Pro France${maj ? ` (liste mise à jour ${ago(maj)})` : ""}.` : "La liste arrive après le premier scan du bot."}
       Touche une paire pour ouvrir son graphique en direct, avec des outils pour apprendre à le lire.</p>
     <div class="onglets" role="tablist">
       ${ONGLETS.filter(([k]) => counts[k]).map(([k, t]) => `<button type="button" role="tab" class="onglet" data-tab="${k}" aria-selected="${k === tab}">${t} <span class="small">${counts[k]}</span></button>`).join("")}
@@ -52,7 +55,7 @@ export async function render(main, ctx, onglet = null) {
       const st = o ? (o.state === "LONG" ? ["long", "bot : long"] : o.state === "SHORT" ? ["short", "bot : short"]
         : o.state?.startsWith("SURV") ? ["ambre", "bot : à surveiller"] : ["", "bot : attendre"]) : null;
       return `<a class="paire" href="${lienGraph(i)}" data-key="${esc(i.key)}">
-        <span class="paire-nom"><b>${esc(i.display)}</b>
+        <span class="paire-nom"><b>${esc(i.venue === "futures" ? `${nomActif(i)} · ${i.display}` : i.display)}</b>
           <span class="small muted">${i.venue === "futures" ? "futures" : "spot"}${i.can_short ? " · short" : ""}${i.max_leverage > 1 ? ` · levier max ×${i.max_leverage}` : ""}</span></span>
         <span class="paire-prix num" data-prix>${st ? `<span class="pastille ${st[0]}">${esc(st[1])}</span>` : ""}</span>
         <span class="fleche-d" aria-hidden="true">›</span></a>`;

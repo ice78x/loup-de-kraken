@@ -169,3 +169,25 @@ test("marge isolée : stop facultatif, perte max = marge, marge libre respectée
   // Avec garde-fous : sans stop, 20 € = 22 % du solde → bloqué
   assert.equal(planFromQty({ ...base, strict: true, sl: null, qty: 1, leverage: 5 }).ok, false);
 });
+
+test("recalcul des frais : un trade saisi à 0,40 % (spot) recalculé à 0,02 % (futures) — TP1/TP2/TP3 touchés", async () => {
+  const { recalculerFrais } = await import("../sizing.js");
+  // Le trade de la capture : LONG BTC 0,0173795 à 84 721,7, TP 85 017 / 85 218,2 / 85 535,9 (30/40/30), frais 0,40 % partout.
+  const E = 84721.7, q = 0.0173795, fx = 0.89, f = 0.004;
+  const tps = [[85017, 0.3], [85218.2, 0.4], [85535.9, 0.3]];
+  const brut = tps.reduce((a, [p, w]) => a + (p - E) * q * w, 0);
+  const ventes = tps.reduce((a, [p, w]) => a + p * q * w, 0);
+  const realise = (brut - f * (E * q + ventes)) * fx;                       // ≈ −2,3 € : les frais spot mangent les 3 TP
+  assert.ok(realise < 0);
+  const t = { direction: "LONG", entry_price: E, qty: q, qty_remaining: 0, eur_per_quote: fx, fee_pct: 0.4, realized_pnl_eur: realise,
+    sl: 84420.5, status: "clos", risk_eur: 20.33 };
+  const r = recalculerFrais(t, 0.02);
+  assert.ok(Math.abs(r.ventes - ventes) < 1e-6);
+  assert.ok(Math.abs(r.realized - (brut - 0.0002 * (E * q + ventes)) * fx) < 1e-9);
+  assert.ok(r.realized > 7);                                                  // ≈ +7,7 € avec les frais futures
+  assert.ok(r.rMultiple > 1);
+  // SHORT partiellement vendu : on retrouve aussi la bonne valeur des ventes
+  const s = { direction: "SHORT", entry_price: 100, qty: 2, qty_remaining: 1, eur_per_quote: 1, fee_pct: 0.4, status: "ouvert" };
+  s.realized_pnl_eur = (100 - 95) * 1 - 0.004 * (100 * 2 + 95 * 1);
+  assert.ok(Math.abs(recalculerFrais(s, 0.02).ventes - 95) < 1e-9);
+});

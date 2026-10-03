@@ -89,6 +89,16 @@ def parse_spot_pair(key: str, info: dict, tax: Taxonomy, api_asset_class: str | 
     )
 
 
+def tick_decimals(tick: float, default: int = 8) -> int:
+    """Nombre de décimales d'un pas de prix Kraken (0.000001 → 6, 0.5 → 1, 1 → 0). 0 ou inconnu → default."""
+    if not tick or tick <= 0:
+        return default
+    for d in range(0, 13):
+        if abs(round(tick, d) - tick) < tick * 1e-6:
+            return d
+    return default
+
+
 def _max_lev_from_margin(levels: list[dict] | None) -> int:
     if not levels:
         return 0
@@ -140,7 +150,7 @@ def parse_futures_instrument(info: dict, tax: Taxonomy, country: str, max_levera
         max_leverage_long=lev, max_leverage_short=lev, allowed_leverages_long=allowed,
         allowed_leverages_short=allowed, ordermin=min_size, costmin=0.0,
         tick_size=float(info.get("tickSize") or 0), lot_decimals=max(lot_dec, 0),
-        pair_decimals=8, contract_size=float(info.get("contractSize") or 1), constraints=constraints,
+        pair_decimals=tick_decimals(float(info.get("tickSize") or 0)), contract_size=float(info.get("contractSize") or 1), constraints=constraints,
     )
 
 

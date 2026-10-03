@@ -25,15 +25,18 @@ export function searchInstruments(insts, query, limit = 12) {
   return scored.slice(0, limit).map((x) => x[4]);
 }
 
-// Liste de départ (champ vide) : les actifs les plus suivis d'abord, en spot USD/EUR.
+// Liste de départ (champ vide) : les actifs les plus suivis d'abord, un seul marché par actif (spot avant futures si les deux existent).
 const POPULAIRES = ["BTC", "ETH", "SOL", "XRP", "LINK", "ADA", "DOGE", "AVAX", "DOT", "LTC", "PAXG", "TSLAX", "NVDAX", "AAPLX", "SPYX"];
 function popular(insts, limit) {
   const rank = (i) => {
     const p = POPULAIRES.indexOf(norm(i.base));
     return p < 0 ? POPULAIRES.length : p;
   };
+  const vus = new Set();
   return [...(insts || [])]
-    .filter((i) => i.venue !== "futures" && ["USD", "EUR"].includes(String(i.quote).toUpperCase()))
-    .sort((a, b) => rank(a) - rank(b) || String(a.quote).localeCompare(String(b.quote)) * -1 || String(a.display).localeCompare(String(b.display)))
+    .filter((i) => ["USD", "EUR"].includes(String(i.quote).toUpperCase()))
+    .sort((a, b) => rank(a) - rank(b) || (a.venue === "futures") - (b.venue === "futures")
+      || String(a.quote).localeCompare(String(b.quote)) * -1 || String(a.display).localeCompare(String(b.display)))
+    .filter((i) => { const k = norm(i.base) || norm(i.display); if (vus.has(k)) return false; vus.add(k); return true; }) // un seul par actif
     .slice(0, limit);
 }

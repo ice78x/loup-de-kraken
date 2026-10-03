@@ -19,3 +19,16 @@ test("grille Kraken par type de marché (mode spot)", () => {
   assert.equal(krakenFees({ venue: "spot", asset_class: "xstock" }, XSTOCK_CHANGE).taker, 0.08);
   setMode("futures");
 });
+
+test("pas de perpétuel Kraken pour l'actif : on retombe sur le spot (frais spot, ordre en spot)", async () => {
+  const { setPerps, hasPerp, venueEffective } = await import("../fees.js");
+  setPerps([{ base: "BTC", api_symbol: "PF_XBTUSD" }, { base: "ETH", api_symbol: "PF_ETHUSD" }]);
+  const prompt = { venue: "spot", asset_class: "crypto", base: "PROMPT", quote: "USD", display: "PROMPT/USD" };
+  assert.equal(hasPerp(prompt), false);
+  assert.equal(venueEffective(prompt), "spot");
+  assert.equal(krakenFees(prompt).taker, 0.8);
+  assert.equal(perpSymbol(prompt), null);
+  assert.equal(perpSymbol({ display: "BTC/USD", base: "BTC" }), "PF_XBTUSD");
+  assert.equal(krakenFees({ venue: "spot", asset_class: "crypto", base: "ETH", quote: "USD" }).taker, 0.05);
+  setPerps(null); // remet « liste inconnue » pour les autres tests
+});

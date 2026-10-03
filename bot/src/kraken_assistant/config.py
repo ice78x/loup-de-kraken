@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # Les membres tradent les signaux crypto sur les futures perpétuels Kraken (PF_…) : frais futures pour ces paires.
     # "spot" pour revenir aux frais spot (0,40 / 0,80 %).
     execution_venue: str = "futures"
+    # Le club ne trade QUE les futures perpétuels Kraken : le bot n'analyse et ne propose que des contrats PF_….
+    perps_only: bool = True
     tp_split: tuple[float, float, float] = (0.30, 0.40, 0.30)
     correlation_block: float = 0.75
     timezone: str = "Europe/Paris"
@@ -59,7 +61,9 @@ class Settings(BaseSettings):
     max_spread_pct: float = 0.35
     min_volume_24h_eur_crypto: float = 300_000
     min_volume_24h_eur_other: float = 25_000
-    min_sl_atr15: float = 0.6   # SL plus serré = surveillance continue requise
+    # Stop minimum = 1,2 × la volatilité moyenne d'une bougie 15 min (ATR). Plus serré, une simple mèche le touche
+    # (ex. WIF du 02/10 : stop à 0,5 ATR → sorti par le bruit). Le trader regarde toutes les 10-30 min : il faut de l'air.
+    min_sl_atr15: float = 1.2
     max_extension_atr15: float = 2.5
     max_fee_share_of_risk: float = 0.35
     score_trade: int = 60

@@ -1,13 +1,13 @@
 // Carte « setup » expliquée pour débutants : où en est le prix, scénario du bot, combien on risque / peut gagner.
 // Logique pure (testée dans tests/setup.test.mjs) + HTML de la carte. Le graphique en direct est dans live.js.
-import { krakenFees, venueEffective } from "./fees.js";
+import { getMode, hasPerp, krakenFees, nomActif, perpSymbol, venueEffective } from "./fees.js";
 import { liqFraction } from "./sizing.js";
 import { STRAT, ago, esc, eur, pct, pq } from "./ui.js";
 
 const BAR = 900; // bougies de 15 minutes
 const CLASSE = { crypto: "Crypto", xstock: "Action (xStock)", commodity: "Matière première" };
 
-export const base = (s) => String(s.display || "").split("/")[0];
+export const base = (s) => nomActif(s);
 const isLong = (s) => s.direction === "LONG";
 
 /** Minutes avant la clôture de la bougie 15 min en cours. */
@@ -109,8 +109,11 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   if (waitingSide) {
     const target = L ? hi : lo;
     const verbe = L ? "redescendre" : "remonter";
-    return { code: "attendre", ton: "ambre", icone: "⏳", titre: watch ? "Attendre" : "Attendre le retour", dist: dist(target),
-      texte: `Le prix doit encore ${verbe} de ${pct(dist(target), 2)} pour revenir dans la zone jaune. ${watch ? "" : "N'entre pas plus loin : tu risquerais plus pour gagner moins."}`.trim() };
+    const d = dist(target), ecart = Math.abs(target - price);
+    // Écart minuscule : on l'écrit en prix (« il manque 0,1 $ ») plutôt qu'un « 0 % » arrondi qui ne veut rien dire.
+    const combien = d < 0.05 ? `${pq(ecart, s.quote)} (${pct(d, 3)})` : pct(d, 2);
+    return { code: "attendre", ton: "ambre", icone: "⏳", titre: d < 0.05 ? "Presque dans la zone" : watch ? "Attendre" : "Attendre le retour", dist: d,
+      texte: `Le prix doit encore ${verbe} de ${combien} pour revenir dans la zone jaune.${d < 0.05 ? " Il y est presque : garde l'œil dessus." : ""} ${watch ? "" : "N'entre pas plus loin : tu risquerais plus pour gagner moins."}`.trim() };
   }
   return { code: "prudence", ton: "short", icone: "⚠️", titre: "Prudence",
     texte: `Le prix est passé de l'autre côté de la zone, près du stop (${pct(dist(sl), 2)}). Attends qu'il revienne dans la zone.` };
@@ -145,7 +148,13 @@ export function projection(s, candles, price = null) {
 }
 
 /** Mouvement de prix (en %) qui liquide une position isolée à ce levier (règles Kraken, voir liqFraction dans sizing.js). */
-const liqPctOf = (s, lev, maxLev = 10) => liqFraction(lev, venueEffective(s), maxLev) * 100;
+const liqPctOf = (s, lev, maxLev = 10) => {
+  const v = venueEffective(s);
+  // Paire du bot tradée sur son perpétuel : la marge de maintenance est celle du perpétuel (x10 max en Europe),
+  // pas celle de la paire spot (ex. levier spot max x3 → maintenance faussement énorme → « liquidé » à tort).
+  const m = v === "futures" && s.venue !== "futures" ? 10 : maxLev;
+  return liqFraction(lev, v, m) * 100;
+};
 /** Mise de référence pour le levier conseillé : 25 % du solde. */
 export const MISE_REF = 25;
 
@@ -244,9 +253,19 @@ const ps = (x) => (x == null || !isFinite(x) ? "—" : (x >= 0 ? "+" : "−") + 
 const ton = (x) => (x == null ? "" : x >= 0 ? "gain" : "perte");
 
 /** Levier conseillé, bien visible (carte d'accueil et page du signal). */
+/** Où passer l'ordre sur Kraken : le perpétuel (onglet Futures) ou le spot si aucun perpétuel n'existe. */
+export function ouTrader(s) {
+  if (venueEffective(s) === "futures") return `<p class="small">📍 Sur Kraken : onglet <b>Futures</b> → <b>${esc(perpSymbol(s) || s.display)}</b></p>`;
+  if (getMode() === "futures" && s.asset_class !== "xstock" && !hasPerp(s)) {
+    return `<p class="alerte small">📍 <b>Pas de futures perpétuel Kraken pour ${esc(base(s))}</b> : ce trade se fait en <b>spot</b> (cherche ${esc(s.display)}),
+      frais spot (0,40 % / 0,80 %) et ${isLong(s) ? "levier limité" : "short seulement si Kraken propose la marge sur cette paire"}.</p>`;
+  }
+  return `<p class="small">📍 Sur Kraken : marché <b>spot</b> → <b>${esc(s.display)}</b></p>`;
+}
+
 export function levierBadge(s, me, maxLev) {
   const c = levierConseille(s, me, maxLev);
-  return `<div class="levier-conseil"><span>Levier conseillé</span><b class="num">x${c.lev}</b>
+  return `${ouTrader(s)}<div class="levier-conseil"><span>Levier conseillé</span><b class="num">x${c.lev}</b>
     <span class="small muted">${c.lev === 1 ? "sans effet de levier" : "marge isolée"} · liquidation ≈ ${p1(c.liqPct)} contre ${p1(c.slPct)} pour le stop</span></div>`;
 }
 
@@ -275,7 +294,7 @@ export function chiffres(s, me, maxLev = 10) {
         ${venueEffective(s) === "spot" ? "En futures perpétuels, les frais sont bien plus bas (0,02 % / 0,05 %)." : "À éviter."}</p>`
         : r.tp1 != null && r.tp1 <= 0 ? `<p class="alerte small">⚠ À l'objectif 1, les frais sont plus gros que le gain : seuls les objectifs 2 et 3 rapportent.</p>` : ""}
       <p class="small muted">Ex. avec 10 € de mise à x${l} (position de ${eur(10 * l)}) : ${ex(-r.perte)} · ${ex(r.tp1)} · ${ex(r.tout)}.
-        ${l > c.lev ? " Plus de levier = position plus grosse pour la même mise : la perte au stop grossit aussi." : ""}</p>
+        ${l > 1 && !r.liqAvant ? ` À x${l}, ta position vaut ${l} fois ta mise : le stop à ${p1(ecarts(s).slPct)} du prix coûte donc ≈ ${p1(r.perte)} de ta mise (${l} × ${p1(ecarts(s).slPct)} + frais).` : ""}</p>
     </div>`;
   };
   return `<div class="lev-bloc">

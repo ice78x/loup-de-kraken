@@ -2,13 +2,15 @@
 import { backend } from "../data.js";
 import { eurPerQuote, prices } from "../market.js";
 import { searchInstruments } from "../search.js";
+import { getMode, nomActif, perpsSeulement } from "../fees.js";
 import { esc } from "../ui.js";
 import { tradeForm } from "./tradeform.js";
 
 const CLASSE = { crypto: "crypto", xstock: "action", commodity: "matière première" };
 
 export async function render(main, ctx, preKey = null) {
-  const [insts, mine] = await Promise.all([backend.instruments(), backend.trades({ userId: ctx.me.id, limit: 300 })]);
+  const [tous, mine] = await Promise.all([backend.instruments(), backend.trades({ userId: ctx.me.id, limit: 300 })]);
+  const insts = perpsSeulement(tous); // mode futures : uniquement les perpétuels Kraken (PF_…)
   main.innerHTML = `
     <a href="#/trades" class="muted small">← Mes trades</a>
     <h1>Nouveau trade manuel</h1>
@@ -21,7 +23,7 @@ export async function render(main, ctx, preKey = null) {
           <span class="fleche" aria-hidden="true">▾</span></div>
           <div id="choix" class="menu" role="listbox" hidden></div>
         </div>
-        <small>${insts.length ? `${insts.length} paires disponibles en France, lues chez Kraken · <a href="#/graphiques">voir les graphiques</a>` : "La liste arrive après le premier scan du bot."}</small>
+        <small>${insts.length ? `${insts.length} ${getMode() === "futures" && insts !== tous ? "perpétuels Kraken" : "paires"} disponibles en France, lus chez Kraken · <a href="#/graphiques">voir les graphiques</a>` : "La liste arrive après le premier scan du bot."}</small>
       </div>
       <div id="form" style="margin-top:16px"></div>
     </div>`;
@@ -49,7 +51,7 @@ export async function render(main, ctx, preKey = null) {
     const txt = q.value.trim();
     found = searchInstruments(insts, txt, 40);
     list.innerHTML = (txt ? "" : '<p class="menu-titre">Les plus suivis — ou tape un nom</p>') + (found.length ? found.map((i, n) => `<button type="button" class="option" role="option" data-n="${n}">
-        <b>${esc(i.display)}</b>
+        <b>${esc(i.venue === "futures" ? `${nomActif(i)} · ${i.display}` : i.display)}</b>
         <span class="small muted">${esc(CLASSE[i.asset_class] || "autre")} · ${i.venue === "futures" ? "futures" : "spot"}${i.can_short ? " · short" : ""}${i.max_leverage > 1 ? ` · ×${i.max_leverage}` : ""}</span>
       </button>`).join("")
       : `<p class="menu-titre">Aucune paire « ${esc(txt)} » sur Kraken France.</p>`);

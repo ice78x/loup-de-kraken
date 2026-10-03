@@ -71,7 +71,9 @@ export function demoBackend() {
     inst("SOL/USD", "crypto", 160), inst("XRP/USD", "crypto", 0.62), inst("DOGE/USD", "crypto", 0.15),
     inst("TSLAx/USD", "xstock", 245, { api_asset_class: "tokenized_asset", max_leverage: 1, can_short: false }),
     inst("NVDAx/USD", "xstock", 128, { api_asset_class: "tokenized_asset", max_leverage: 1, can_short: false }),
-    { ...inst("PF_XBTUSD", "crypto", 71000), key: "futures:PF_XBTUSD", venue: "futures", api_symbol: "PF_XBTUSD", base: "BTC", max_leverage: 10 },
+    ...[["XBT", "BTC", 71000], ["ETH", "ETH", 2700], ["SOL", "SOL", 160], ["LINK", "LINK", 15.3], ["XRP", "XRP", 0.62], ["PAXG", "PAXG", 2650]]
+      .map(([sym, b, px]) => ({ ...inst(`PF_${sym}USD`, b === "PAXG" ? "commodity" : "crypto", px), key: `futures:PF_${sym}USD`, venue: "futures",
+        api_symbol: `PF_${sym}USD`, base: b, max_leverage: 10 })),
   ];
   const scan = {
     id: 1, created_at: ago(0.4), mode: "normal", verdict: "TRADE", duration_s: 96,
@@ -150,6 +152,7 @@ export function demoBackend() {
     signal: (id) => ok(signals.find((s) => s.id === +id) || null),
     recentSignals: () => ok(signals.filter((s) => s.status === "TRADE")),
     instruments: () => ok(insts),
+    perps: () => ok(insts.filter((i) => i.venue === "futures")),
     instrumentsByKeys: (keys) => ok(insts.filter((i) => keys.includes(i.key))),
     instrument: (key) => ok(insts.find((i) => i.key === key) || null),
     signalsFor: (key) => ok(signals.filter((s) => s.instrument_key === key)),
