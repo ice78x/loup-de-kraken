@@ -162,6 +162,25 @@ def apply_filters(st: Setup, a: MarketAnalysis, s: Settings) -> None:
         st.sl = st.sizing_entry - st.sign * s.min_sl_atr15 * a.atr15
         st.warnings.append(f"stop éloigné à {st.sl:.6g} (au lieu de {ancien:.6g}) : au moins {s.min_sl_atr15:g} × la volatilité "
                            "d'une bougie 15 min, pour ne pas être sorti par une simple mèche")
+    # Stop au-delà de la liquidité proche : un stop posé juste avant le plus haut (SHORT) / plus bas (LONG) récent
+    # est exactement là où le marché va chercher les stops (ex. ETH SHORT du 03/10 : stop sous le haut du range).
+    df15 = (getattr(a, "frames", None) or {}).get("15m")
+    if df15 is not None and len(df15) and a.atr15 > 0:
+        recent = df15.iloc[-s.liq_lookback_15m:]
+        extreme = float(recent["high"].max()) if st.direction == "SHORT" else float(recent["low"].min())
+        derriere = st.sign * (st.sl - extreme) > 0          # stop entre l'entrée et l'extrême récent
+        proche = abs(extreme - st.sizing_entry) <= 3 * a.atr15
+        if derriere and proche and st.sign * (st.sizing_entry - extreme) > 0:
+            ancien = st.sl
+            st.sl = extreme - st.sign * 0.25 * a.atr15
+            st.warnings.append(f"stop placé au-delà du {'plus haut' if st.direction == 'SHORT' else 'plus bas'} des 4 dernières heures "
+                               f"({extreme:.6g}) : {st.sl:.6g} au lieu de {ancien:.6g}, pour ne pas être chassé")
+    # Stop minimal en % du prix (marchés très calmes : 1,2 × ATR peut faire 0,1 %, moins que les frais + le bruit)
+    min_dist = st.sizing_entry * s.min_sl_pct / 100
+    if abs(st.sizing_entry - st.sl) < min_dist:
+        ancien = st.sl
+        st.sl = st.sizing_entry - st.sign * min_dist
+        st.warnings.append(f"stop éloigné à {st.sl:.6g} (au lieu de {ancien:.6g}) : au moins {s.min_sl_pct:g} % du prix")
     snap_to_tick(st, getattr(inst, "tick_size", 0) or 0)
     if st.direction == "SHORT" and not inst.can_short:
         st.rejections.append("SHORT impossible sur cet instrument (pas de marge/perp)")

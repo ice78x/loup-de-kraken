@@ -29,6 +29,8 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
    Côté site, le membre choisit la **quantité** (comme sur Kraken, marge isolée) : le site montre la perte au SL / à la liquidation avant d'enregistrer.
    Levier conseillé (`levierConseille` dans `site/js/setup.js`) : liquidation ≥ 2× plus loin que le stop, et mise de 25 % du solde ≈ risque habituel.
    Frais : grille Kraken dans `site/js/fees.js` ⇄ `bot/src/kraken_assistant/risk/fees.py` (à garder identiques, avec la date de vérification).
+   Stop des setups (`apply_filters`) : ≥ `min_sl_atr15` × ATR 15m, ≥ `min_sl_pct` % du prix, et au-delà du plus haut/bas des 4 dernières heures
+   s'il est proche (sinon stop chassé) ; R:R revérifié ensuite. Ces réglages sont aussi dans `bot_settings` (la base écrase config.py).
    Niveaux des setups arrondis au pas de prix Kraken (`snap_to_tick` dans `strategies/base.py` : stop éloigné, TP rapprochés) ;
    le site arrondit aussi les prix pré-remplis aux décimales de la paire (`pair_decimals`).
    **Le club trade uniquement les futures perpétuels Kraken (PF_…)** : `perps_only=True` dans `bot/.../config.py` (le bot n'analyse que les PF_),

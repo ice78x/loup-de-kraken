@@ -36,7 +36,7 @@ log = logging.getLogger("cloud")
 # Réglages modifiables depuis le site → (type, min, max). Les bornes sont revérifiées ici (défense en profondeur).
 EDITABLE = {
     "score_trade": (int, 45, 85), "score_watch": (int, 25, 70), "min_rr_tp2": (float, 1.0, 4.0),
-    "min_net_rr_tp2": (float, 0.8, 3.0), "max_spread_pct": (float, 0.05, 1.0), "min_sl_atr15": (float, 0.3, 2.0),
+    "min_net_rr_tp2": (float, 0.8, 3.0), "max_spread_pct": (float, 0.05, 1.0), "min_sl_atr15": (float, 0.3, 2.0), "min_sl_pct": (float, 0.1, 1.5),
     "max_extension_atr15": (float, 1.0, 5.0), "universe_max_crypto": (int, 5, 40),
     "universe_max_xstocks": (int, 0, 20), "universe_max_commodities": (int, 0, 15),
     "disabled_strategies": (list, None, None), "news_enabled": (bool, None, None),

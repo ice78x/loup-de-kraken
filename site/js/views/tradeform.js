@@ -20,7 +20,9 @@ export function tradeForm(host, o) {
   const s = o.signal;
   const dir0 = s?.direction || "LONG";
   const inZone = s && o.price && o.price >= s.entry_low && o.price <= s.entry_high;
-  const entry0 = s ? (inZone ? o.price : (dir0 === "LONG" ? s.entry_high : s.entry_low)) : o.price;
+  // Prix déjà passé de l'autre côté de la zone, vers le stop (ex. NEAR du 03/10 : zone 4,68–4,69, prix 4,65, stop 4,64).
+  const coteStop = !!(s && o.price && (dir0 === "LONG" ? o.price < s.entry_low : o.price > s.entry_high));
+  const entry0 = s ? (inZone || coteStop ? o.price : (dir0 === "LONG" ? s.entry_high : s.entry_low)) : o.price;
   const budget = riskBudget(o.me, o.trades);
   const venue = venueEffective(o.inst); // futures perpétuels (par défaut) ou spot, selon Mon compte
   const perp = venue === "futures";
@@ -86,10 +88,12 @@ export function tradeForm(host, o) {
     </div>
     <label class="champ"><span>Note (facultatif)</span><input name="notes" maxlength="300" placeholder="Pourquoi je prends ce trade"></label>
     <div id="plan" aria-live="polite"></div>
-    ${s?.status === "WATCH" ? `<label class="alerte rouge interrupteur" style="display:flex">
+    ${s?.status === "WATCH" || coteStop ? `<label class="alerte rouge interrupteur" style="display:flex">
       <input type="checkbox" name="sansconfirm">
-      <span><b>⚠️ Ce setup n'est PAS validé par le bot.</b> Il manque encore : ${esc(s.trigger_text || "la confirmation 15 min")}.
-        Entrer maintenant, c'est parier sans la confirmation (c'est souvent là qu'on se fait sortir).
+      <span>${coteStop ? `<b>⚠️ Le prix (${pq(o.price, o.inst.quote)}) est déjà passé ${dir0 === "LONG" ? "SOUS" : "AU-DESSUS de"} la zone d'entrée, vers le stop.</b>
+        Le scénario du bot est abîmé : le stop est tout près (${pct((Math.abs(o.price - s.sl) / o.price) * 100, 2)}) et un simple mouvement normal le touche.`
+        : `<b>⚠️ Ce setup n'est PAS validé par le bot.</b> Il manque encore : ${esc(s.trigger_text || "la confirmation 15 min")}.
+        Entrer maintenant, c'est parier sans la confirmation (c'est souvent là qu'on se fait sortir).`}
         Coche seulement si tu choisis d'entrer quand même.</span></label>` : ""}
     <button class="btn principal plein" type="submit">Enregistrer le trade</button>
   </form>`;
@@ -101,9 +105,16 @@ export function tradeForm(host, o) {
 
   const v = (n) => num(f.elements[n].value);
   const orderType = () => f.elements.order.value;
+  // Ordre limite « du mauvais côté » du prix (achat au-dessus / vente en dessous) : Kraken l'exécute tout de suite au marché.
+  // En entraînement, le trade s'ouvre donc au prix réel du moment (et paie les frais marché), pas à un prix qui n'existe pas.
+  const auMarche = () => {
+    const e = v("entry");
+    if (!(o.price > 0) || !(e > 0) || f.elements.mode.value !== "paper") return false;
+    return f.elements.dir.value === "LONG" ? e > o.price * 1.0005 : e < o.price * 0.9995;
+  };
   const base = () => ({
-    direction: f.elements.dir.value, entry: v("entry"), sl: v("sl"), tps: [v("tp1"), v("tp2"), v("tp3")].filter((x) => x != null),
-    balance: +o.me.balance_eur, feeTaker: fees.taker, feeMaker: fees.maker, entryIsMaker: orderType() === "limit",
+    direction: f.elements.dir.value, entry: auMarche() ? o.price : v("entry"), sl: v("sl"), tps: [v("tp1"), v("tp2"), v("tp3")].filter((x) => x != null),
+    balance: +o.me.balance_eur, feeTaker: fees.taker, feeMaker: fees.maker, entryIsMaker: orderType() === "limit" && !auMarche(),
     eurPerQuote: o.eurPerQuote, lotDecimals: o.inst.lot_decimals ?? 8, ordermin: perp ? 0 : o.inst.ordermin || 0, venue, maxLev: perp ? 10 : +o.inst.max_leverage || 10,
     usedMarginEur: usedMarginEur(o.trades),
   });
@@ -160,6 +171,8 @@ export function tradeForm(host, o) {
     const ton = free ? "" : lossPct > MAX_RISK_PCT + 1e-9 ? "short" : lossPct > +o.me.risk_pct + 1e-9 ? "ambre" : "long";
     box.innerHTML = `
       ${errs.length ? `<div class="alerte rouge"><ul>${errs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : ""}
+      ${auMarche() ? `<p class="alerte small">⚡ Ton prix limite (${pq(v("entry"), o.inst.quote)}) est ${p.direction === "LONG" ? "au-dessus" : "en dessous"} du prix actuel :
+        sur Kraken, l'ordre serait exécuté <b>tout de suite au marché</b>. Le trade d'entraînement s'ouvre donc à ${pq(o.price, o.inst.quote)} (frais marché).</p>` : ""}
       <div class="feu ${ton}"><span class="feu-icone">${free ? "📉" : ton === "long" ? "🛡️" : ton === "ambre" ? "⚠️" : "⛔"}</span>
         <div><strong>${plan.hasSl === false ? "Sans stop, perte max" : plan.liqBeforeSl ? "Liquidation avant le stop, perte max" : "Si le SL est touché"} : ${eur(-plan.lossAtSlEur)} (${pct(lossPct, 2)} de ton solde)</strong>
         ${free ? "" : `<p>${ton === "long" ? "Dans ta règle de risque." : ton === "ambre" ? "Plus que ton risque habituel : seulement pour un setup exceptionnel."
@@ -227,15 +240,16 @@ export function tradeForm(host, o) {
   });
   // Au moment de quitter le champ (pas à chaque chiffre tapé, pour ne pas couper la saisie)
   f.addEventListener("change", (e) => { if (e.target.name === "qty" || e.target.name === "amount") { plafond(e.target.name); update(); } });
-  f.addEventListener("change", (e) => { if (e.target.name === "order" || e.target.name === "dir") update(); });
+  f.addEventListener("change", (e) => { if (e.target.name === "order" || e.target.name === "dir" || e.target.name === "mode") update(); });
 
   f.addEventListener("submit", (e) => {
     e.preventDefault();
     update();
     if (!plan?.ok || plan.blocking.length) { toast(plan?.blocking?.[0] || plan?.errors?.[0] || "Vérifie les champs.", true); return; }
     if (Date.now() - ramene < 2500) { toast("La quantité vient d'être ramenée au maximum possible : vérifie-la, puis enregistre.", true); return; }
-    if (s?.status === "WATCH" && !f.elements.sansconfirm?.checked) {
-      toast("Ce setup n'est pas encore validé par le bot : attends la confirmation, ou coche la case rouge pour entrer quand même.", true); return;
+    if ((s?.status === "WATCH" || coteStop) && !f.elements.sansconfirm?.checked) {
+      toast(coteStop ? "Le prix est déjà passé vers le stop : attends qu'il revienne dans la zone, ou coche la case rouge pour entrer quand même."
+        : "Ce setup n'est pas encore validé par le bot : attends la confirmation, ou coche la case rouge pour entrer quand même.", true); return;
     }
     const x = base();
     const lev = +f.elements.lev.value;

@@ -315,7 +315,8 @@ insert into public.bot_settings (key, value, label, help, min_value, max_value) 
  ('min_rr_tp2', '1.5', 'R:R minimal au TP2', 'Gain potentiel minimum au TP2, en multiples du risque.', 1, 4),
  ('min_net_rr_tp2', '1.2', 'R:R net de frais minimal au TP2', 'Même chose après les frais Kraken.', 0.8, 3),
  ('max_spread_pct', '0.35', 'Spread maximal (%)', 'Écart achat/vente maximum accepté.', 0.05, 1),
- ('min_sl_atr15', '0.6', 'SL minimal (en volatilité 15m)', 'Évite les stops trop serrés qui sautent sur du bruit.', 0.3, 2),
+ ('min_sl_atr15', '1.2', 'SL minimal (en volatilité 15m)', 'Évite les stops trop serrés qui sautent sur du bruit.', 0.3, 2),
+ ('min_sl_pct', '0.35', 'SL minimal (% du prix)', 'Stop jamais plus près que ce % (marché calme, week-end) : sinon les frais et le bruit le touchent.', 0.1, 1.5),
  ('max_extension_atr15', '2.5', 'Extension maximale', 'Refuse les mouvements déjà partis trop loin.', 1, 5),
  ('universe_max_crypto', '30', 'Nombre de cryptos analysées', 'Les plus liquides.', 5, 40),
  ('universe_max_xstocks', '10', 'Nombre de xStocks analysés', '', 0, 20),
@@ -325,6 +326,13 @@ insert into public.bot_settings (key, value, label, help, min_value, max_value) 
  ('use_optimized_params', 'true', 'Utiliser les réglages appris sur l''historique', '', null, null),
  ('quote_currencies', '["USD"]', 'Paires analysées', 'Devise de cotation des paires que le bot peut proposer (USD par défaut).', null, null)
 on conflict (key) do nothing;
+-- Stop « respirable » : l'ancien réglage 0,6 annulait la règle du bot (1,2). Corrigé une seule fois.
+do $$ begin
+  if not exists (select 1 from public._migrations where name = 'stop_respirable_1_2') then
+    update public.bot_settings set value = '1.2'::jsonb where key = 'min_sl_atr15' and (value)::text::numeric < 1.2;
+    insert into public._migrations (name) values ('stop_respirable_1_2');
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 5. Classement (calculé en direct)
