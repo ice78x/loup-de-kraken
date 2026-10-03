@@ -123,8 +123,10 @@ export function tradeForm(host, o) {
     syncQtyAmount();
     plan = planFromQty({ ...p, qty: v("qty"), leverage: lev, riskPct: +o.me.risk_pct, maxRiskPct: MAX_RISK_PCT, strict: !free });
     // Tant que tu n'as pas touché au levier, on propose le plus petit qui permet de payer la marge (comme Kraken l'exigerait).
-    if (!userTouchedLev && plan.notionalEur > p.balance * lev) {
-      const sug = suggestLeverage(plan, p.balance, plan.slPct, maxLev);
+    const libreLev = Math.max(0, p.balance - (p.usedMarginEur || 0)) - (plan.entryFeeEur || 0);
+    if (!userTouchedLev && plan.notionalEur > libreLev * lev) {
+      // sans stop, pas de contrainte « stop vs levier » : on prend juste le plus petit levier qui loge la marge
+      const sug = suggestLeverage(plan, libreLev, plan.hasSl ? plan.slPct : 0, maxLev);
       if (sug && sug > lev) { f.elements.lev.value = sug; return update(); }
     }
     const errs = [...(plan.errors || [])];
@@ -196,18 +198,42 @@ export function tradeForm(host, o) {
     f.elements.qty.value = String(Math.floor(qq * pas) / pas);
     update();
   }));
+  // Plafond : impossible de saisir une position plus grosse que ce que ta marge libre permet au levier max (frais compris).
+  let ramene = 0;
+  function plafond(name) {
+    const p = base();
+    if (!(p.entry > 0) || !(p.eurPerQuote > 0)) return;
+    const fe = (p.entryIsMaker ? p.feeMaker : p.feeTaker) / 100;
+    const libre = Math.max(0, p.balance - (p.usedMarginEur || 0));
+    const L = userTouchedLev ? +f.elements.lev.value : maxLev;
+    const maxPos = (0.998 * libre * L) / (p.eurPerQuote * (1 + fe * L)); // en devise de cotation
+    const val = name === "qty" ? v("qty") * p.entry : v("amount");
+    if (!(val > maxPos)) return;
+    const qq = maxPos / p.entry;
+    const pas = 10 ** Math.min(p.lotDecimals ?? 8, Math.max(0, 5 - Math.floor(Math.log10(Math.max(qq, 1e-12)))));
+    const qMax = Math.floor(qq * pas) / pas;
+    f.elements.qty.value = qMax > 0 ? String(qMax) : "";
+    f.elements.amount.value = qMax > 0 ? r6(qMax * p.entry) : "";
+    lastEdited = "qty";
+    ramene = Date.now();
+    toast(libre > 0 ? `Ramené au maximum possible : ${pq(qMax * p.entry, o.inst.quote)} de position à x${L} avec ${eur(libre)} de marge libre.`
+      : "Plus de marge libre : tes trades ouverts bloquent déjà tout ton solde.", true);
+  }
   f.addEventListener("input", (e) => {
     if (e.target.name === "lev") userTouchedLev = true;
     if (e.target.name === "qty") lastEdited = "qty";
     if (e.target.name === "amount") lastEdited = "amount";
     update();
   });
+  // Au moment de quitter le champ (pas à chaque chiffre tapé, pour ne pas couper la saisie)
+  f.addEventListener("change", (e) => { if (e.target.name === "qty" || e.target.name === "amount") { plafond(e.target.name); update(); } });
   f.addEventListener("change", (e) => { if (e.target.name === "order" || e.target.name === "dir") update(); });
 
   f.addEventListener("submit", (e) => {
     e.preventDefault();
     update();
     if (!plan?.ok || plan.blocking.length) { toast(plan?.blocking?.[0] || plan?.errors?.[0] || "Vérifie les champs.", true); return; }
+    if (Date.now() - ramene < 2500) { toast("La quantité vient d'être ramenée au maximum possible : vérifie-la, puis enregistre.", true); return; }
     if (s?.status === "WATCH" && !f.elements.sansconfirm?.checked) {
       toast("Ce setup n'est pas encore validé par le bot : attends la confirmation, ou coche la case rouge pour entrer quand même.", true); return;
     }

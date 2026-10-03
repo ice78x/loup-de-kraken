@@ -174,6 +174,12 @@ export async function render(main, ctx) {
     if (!(entry > 0) || !(qty > 0)) { out.innerHTML = '<p class="muted">Indique un prix et une quantité.</p>'; return; }
     const fe = (f.elements.ord.value === "limit" ? fees.maker : fees.taker) / 100, ft = fees.taker / 100, fm = fees.maker / 100;
     const valeur = qty * entry, mise = valeur / lev, fraisEntree = valeur * fe;
+    if (bal > 0 && mise + fraisEntree > bal) {
+      const maxPos = (bal * lev) / (1 + fe * lev);
+      out.innerHTML = `<p class="alerte rouge"><b>Impossible sur Kraken :</b> cette position (${px(valeur)} $) demande ${eur(mise + fraisEntree)} de mise + frais, et tu n'as que ${eur(bal)}.
+        <br>Maximum à x${lev} : <b>${px(maxPos)} $</b> de position (${px(maxPos / entry)} unités). Baisse la quantité ou monte le levier.</p>`;
+      return;
+    }
     const d = liqFraction(lev, "futures", 10);
     const liq = L ? entry * (1 - d) : entry * (1 + d);
     const res = (prix, fSortie) => (L ? prix - entry : entry - prix) * qty - fraisEntree - prix * qty * fSortie;
@@ -195,7 +201,6 @@ export async function render(main, ctx) {
         <div><dt>Si le take profit est touché</dt><dd class="num ${sens(auTp)}">${auTp == null ? "—" : eur(auTp, true)}</dd>
           ${auTp == null ? "" : `<span class="small muted">${pcm(auTp)} de ta mise · ${pcs(auTp)} du solde</span>`}</div>
       </dl>
-      ${mise > bal ? '<p class="alerte rouge">Ta mise dépasse ton solde : Kraken refuserait l\'ordre. Baisse la quantité ou monte le levier.</p>' : ""}
       ${sl > 0 && !liqAvant && d < (Math.abs(entry - sl) / entry) * 2 ? `<p class="alerte">⚠ La liquidation est proche de ton stop : baisse le levier pour garder de la marge.</p>` : ""}
       ${liqAvant ? '<p class="alerte rouge">⚠ La liquidation arrive AVANT ton stop : tu perdrais toute ta mise. Baisse le levier ou rapproche le stop.</p>' : ""}
       <div class="table-wrap"><table><thead><tr><th>Si le prix bouge de</th><th class="d">Résultat</th><th class="d">% mise</th></tr></thead><tbody>
