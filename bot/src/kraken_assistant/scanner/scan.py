@@ -261,6 +261,7 @@ def _scan(app: App, mode: str, focus: set[str] | None) -> ScanReport:
     rep.analyses, rep.fx = analyses, fx
     if s.use_optimized_params:
         apply_edges(setups, load_edges(app.db), s)
+    apply_live_edges(setups, s)
 
     # 5 bis. positions : paper update + conseils de gestion ------------------------------
     for p in open_pos:
@@ -442,6 +443,22 @@ def apply_edges(setups: list[Setup], edges: dict, s) -> None:
                 st.status = WATCH
             else:
                 st.status = TRADE if st.score >= e.score_threshold else WATCH
+
+
+def apply_live_edges(setups: list[Setup], s) -> None:
+    """Résultats RÉELS des signaux passés (même stratégie, même classe d'actifs) : affichés sur chaque setup,
+    et une combinaison qui perd en vrai sur assez de trades ne peut plus donner de 🟢."""
+    for st in setups:
+        e = (s.live_edges or {}).get(f"{st.strategy}|{st.asset_class}")
+        if not e or not e.get("n"):
+            continue
+        n, wr, ar = e["n"], e.get("win_rate"), e.get("avg_r")
+        note = f"résultats réels : {n} trade{'s' if n > 1 else ''}" + (f", {wr:.0f} % gagnants" if wr is not None else "") + \
+            (f", {ar:+.2f}R en moyenne" if ar is not None else "")
+        st.edge_note = f"{st.edge_note} · {note}" if st.edge_note else note
+        if n >= s.live_min_trades and ar is not None and ar < s.live_block_avg_r and st.status == TRADE:
+            st.status = WATCH
+            st.rejections.append(f"{st.strategy} sur {st.asset_class} perd en vrai ({ar:+.2f}R en moyenne sur {n} trades) : pas de 🟢")
 
 
 def _why_no_trade(rep: ScanReport, setups: list[Setup], snap: RiskSnapshot) -> list[str]:

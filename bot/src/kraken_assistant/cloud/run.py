@@ -29,6 +29,7 @@ from ..scanner.formatter import format_report
 from ..scanner.scan import scan
 from ..news.translate import Translator, explain
 from .supabase_rest import Supabase, SupabaseError
+from .learning import live_edges, resolve_signals
 from .tracker import advance_trade
 
 log = logging.getLogger("cloud")
@@ -77,6 +78,10 @@ def build(sb: Supabase | None) -> App:
             upd.update(settings_overrides(sb.select("bot_settings")))
         except SupabaseError as e:
             log.warning("réglages du site illisibles, valeurs par défaut utilisées : %s", e)
+        try:
+            upd["live_edges"] = live_edges(sb.select("signal_stats"))
+        except SupabaseError as e:
+            log.warning("statistiques réelles des signaux indisponibles (lance supabase/schema.sql) : %s", e)
     return App.build(base.model_copy(update=upd))
 
 
@@ -226,6 +231,14 @@ def track_trades(sb: Supabase, app: App) -> int:
     return n
 
 
+def learn(sb: Supabase, app: App) -> None:
+    """Enregistre les résultats réels des signaux terminés (jamais bloquant pour le scan)."""
+    try:
+        resolve_signals(sb, app)
+    except (SupabaseError, DataUnavailable) as e:
+        log.warning("apprentissage non enregistré : %s", e)
+
+
 def cleanup(sb: Supabase, days: int = 60) -> None:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     sb.delete("scans", {"created_at": f"lt.{cutoff}"})  # supprime aussi les signaux liés (cascade)
@@ -256,9 +269,11 @@ def _main(cmd: str) -> int:
         except (DataUnavailable, SupabaseError) as e:
             log.warning("liste des instruments non envoyée : %s", e)
         track_trades(sb, app)
+        learn(sb, app)
         cleanup(sb)
     elif cmd == "track":
         track_trades(sb, app)
+        learn(sb, app)
     elif cmd == "optimize":
         print(execute(app, "OPTIMISER"))
         rows = [{"asset_class": e.asset_class, "strategy": e.strategy, "status": e.status,

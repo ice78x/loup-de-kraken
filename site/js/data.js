@@ -57,6 +57,8 @@ function supabaseBackend() {
     // Signaux du bot sur une paire (sans les bougies, plus léger), du plus récent au plus ancien.
     signalsFor: (key, limit = 20) => q(sb.from("signals").select("id,created_at,status,direction,display,strategy,score,entry_low,entry_high,sl,tp1,tp2,tp3,expires_at,quote,venue,asset_class,trigger_text,rr,instrument_key,api_symbol,api_asset_class")
       .eq("instrument_key", key).order("created_at", { ascending: false }).limit(limit)),
+    signalStats: () => q(sb.from("signal_stats").select("*")),
+    recentOutcomes: (limit = 25) => q(sb.from("signal_outcomes").select("created_at,display,direction,status,outcome,r").order("created_at", { ascending: false }).limit(limit)),
     edges: () => q(sb.from("bot_edges").select("*").order("asset_class")),
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),

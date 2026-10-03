@@ -160,6 +160,13 @@ export function demoBackend() {
     instrumentsByKeys: (keys) => ok(insts.filter((i) => keys.includes(i.key))),
     instrument: (key) => ok(insts.find((i) => i.key === key) || null),
     signalsFor: (key) => ok(signals.filter((s) => s.instrument_key === key)),
+    // DÉMO : statistiques fictives pour montrer la section « Ce que le bot apprend »
+    signalStats: () => ok([{ status: "TRADE", strategy: "cassure_retest", asset_class: "crypto", n: 18, non_entres: 6, win_rate: 55.6, avg_r: 0.31, sum_r: 5.6 },
+      { status: "TRADE", strategy: "rejet_sweep", asset_class: "crypto", n: 16, non_entres: 3, win_rate: 31.3, avg_r: -0.28, sum_r: -4.5 },
+      { status: "WATCH", strategy: "tendance_pullback", asset_class: "crypto", n: 9, non_entres: 12, win_rate: 44.4, avg_r: 0.05, sum_r: 0.4 }]),
+    recentOutcomes: () => ok([{ created_at: ago(5), display: "PF_ETHUSD", direction: "SHORT", status: "TRADE", outcome: "sl", r: -1.04 },
+      { created_at: ago(7), display: "PF_SOLUSD", direction: "LONG", status: "TRADE", outcome: "be", r: 0.27 },
+      { created_at: ago(9), display: "PF_XBTUSD", direction: "LONG", status: "WATCH", outcome: "non_entre", r: null }]),
     edges: () => ok([{ asset_class: "crypto", strategy: "cassure_retest", status: "non démontré", oos_trades: 0, period: "DÉMO" }]),
     settings: () => ok(settings),
     setSetting: (key, value) => { settings.find((s) => s.key === key).value = value; return ok({}); },

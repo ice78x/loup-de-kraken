@@ -334,6 +334,37 @@ do $$ begin
   end if;
 end $$;
 
+-- Résultats RÉELS des signaux du bot (rejoués sur les vraies bougies Kraken) : la mémoire du bot pour s'améliorer.
+-- Gardés sans limite (les signaux eux-mêmes sont effacés après 60 jours).
+create table if not exists public.signal_outcomes (
+  signal_id     bigint primary key,
+  created_at    timestamptz not null,
+  instrument_key text, display text, asset_class text, strategy text, direction text,
+  status        text,               -- TRADE (🟢) | WATCH (🟡) au moment du signal
+  score         numeric,
+  entry_low numeric, entry_high numeric, sl numeric, tp1 numeric, tp2 numeric, tp3 numeric,
+  sl_pct        numeric,            -- distance du stop en % du prix
+  outcome       text not null,      -- sl | be (stop au prix d'entrée après TP1) | tp3 | temps (48 h) | non_entre
+  r             numeric,            -- résultat en R, net de frais (null si jamais entré)
+  tp_hits       int default 0,
+  entered_at    timestamptz,
+  resolved_at   timestamptz,
+  hour_paris    int, weekday int,   -- 0 = lundi
+  recorded_at   timestamptz not null default now()
+);
+create index if not exists signal_outcomes_created_idx on public.signal_outcomes (created_at desc);
+
+create or replace view public.signal_stats with (security_invoker = true) as
+select status, strategy, asset_class,
+       count(*) filter (where outcome <> 'non_entre')                                   as n,
+       count(*) filter (where outcome = 'non_entre')                                    as non_entres,
+       round(avg((r > 0)::int) filter (where outcome <> 'non_entre') * 100, 1)          as win_rate,
+       round(avg(r) filter (where outcome <> 'non_entre'), 3)                           as avg_r,
+       round(coalesce(sum(r) filter (where outcome <> 'non_entre'), 0), 2)              as sum_r
+from public.signal_outcomes
+where created_at > now() - interval '120 days'
+group by status, strategy, asset_class;
+
 -- ---------------------------------------------------------------------
 -- 5. Classement (calculé en direct)
 -- ---------------------------------------------------------------------
@@ -365,6 +396,7 @@ alter table public.bot_settings_log enable row level security;
 alter table public.ideas           enable row level security;
 alter table public.idea_votes      enable row level security;
 alter table public.scan_requests   enable row level security;
+alter table public.signal_outcomes enable row level security;
 
 do $$
 declare r record;
@@ -390,6 +422,7 @@ create policy "lecture scans" on public.scans for select using (public.is_approv
 create policy "lecture signaux" on public.signals for select using (public.is_approved());
 create policy "lecture instruments" on public.instruments for select using (public.is_approved());
 create policy "lecture edges" on public.bot_edges for select using (public.is_approved());
+create policy "lecture résultats signaux" on public.signal_outcomes for select using (public.is_approved());
 
 -- Trades : tout le club voit l'historique, chacun ne modifie que les siens
 create policy "lecture trades du club" on public.trades for select using (public.is_approved());

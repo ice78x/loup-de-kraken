@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     min_sl_atr15: float = 1.2
     min_sl_pct: float = 0.35          # stop jamais plus près que 0,35 % du prix (marchés calmes : frais + bruit)
     liq_lookback_15m: int = 16        # stop placé au-delà du plus haut/bas des 4 dernières heures s'il est proche
+    # Apprentissage sur les vrais résultats des signaux (table signal_outcomes, vue signal_stats)
+    live_edges: dict = {}             # "stratégie|classe" -> {"n", "win_rate", "avg_r"} (rempli par le cloud)
+    live_min_trades: int = 15         # en dessous : pas assez de données réelles pour juger
+    live_block_avg_r: float = -0.15   # R moyen réel en dessous duquel la combinaison ne donne plus de 🟢
     max_extension_atr15: float = 2.5
     max_fee_share_of_risk: float = 0.35
     score_trade: int = 60
