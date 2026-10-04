@@ -5,7 +5,7 @@ import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
 import { STOP_MIN_PCT } from "../setup.js";
 import { getMode, hasPerp, krakenFees, nomActif, perpSymbol, venueEffective } from "../fees.js";
-import { planFromQty, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
+import { openRiskEur, planFromQty, qtyForRisk, riskBudget, suggestLeverage, usedMarginEur } from "../sizing.js";
 import { busy, esc, eur, num, pct, pq, px, rr, sym, toast } from "../ui.js";
 
 const r6 = (x) => (x == null || !isFinite(x) ? "" : String(+(+x).toPrecision(6)));
@@ -155,6 +155,12 @@ export function tradeForm(host, o) {
       if (plan.lossAtSlEur > budget.available + 1e-6) errs.push(`Risque cumulé élevé : il te restait ${eur(budget.available)} de risque disponible selon tes réglages (tes autres trades ouverts comptent).`);
     }
     plan.blocking = errs;
+    // Trades déjà ouverts dans le même sens : ils perdent souvent ensemble (ex. MON + WLD LONG du 04/10, −37 € d'un coup).
+    const memeSens = (o.trades || []).filter((t) => t.status === "ouvert" && t.direction === p.direction);
+    if (memeSens.length >= 1 && plan.qty) {
+      const enJeu = memeSens.reduce((a, t) => a + openRiskEur(t), 0);
+      plan.warnings.unshift(`Tu as déjà ${memeSens.length} trade${memeSens.length > 1 ? "s" : ""} ${p.direction} ouvert${memeSens.length > 1 ? "s" : ""} (${memeSens.map((t) => nomActif(t)).slice(0, 4).join(", ")}) avec ${eur(enJeu)} en jeu. Si le marché part dans l'autre sens, ils perdent ensemble : avec celui-ci, ${eur(enJeu + plan.lossAtSlEur)} au total (${pct(((enJeu + plan.lossAtSlEur) / p.balance) * 100, 1)} de ton solde).`);
+    }
     // Curseur : position et texte (mise en € et en % du capital disponible)
     const pc = pctDepuisQty();
     if (!parPct) f.elements.pct.value = String(Math.min(100, Math.round(pc)));

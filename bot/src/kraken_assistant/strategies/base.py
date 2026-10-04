@@ -172,7 +172,7 @@ def apply_filters(st: Setup, a: MarketAnalysis, s: Settings) -> None:
         proche = abs(extreme - st.sizing_entry) <= 3 * a.atr15
         if derriere and proche and st.sign * (st.sizing_entry - extreme) > 0:
             ancien = st.sl
-            st.sl = extreme - st.sign * 0.25 * a.atr15
+            st.sl = extreme - st.sign * 0.4 * a.atr15   # marge sous le creux / au-dessus du sommet (ex. MON du 04/10 : stop chassé de 0,1 %)
             st.warnings.append(f"stop placé au-delà du {'plus haut' if st.direction == 'SHORT' else 'plus bas'} des 4 dernières heures "
                                f"({extreme:.6g}) : {st.sl:.6g} au lieu de {ancien:.6g}, pour ne pas être chassé")
     # Stop minimal en % du prix (marchés très calmes : 1,2 × ATR peut faire 0,1 %, moins que les frais + le bruit)
@@ -182,6 +182,18 @@ def apply_filters(st: Setup, a: MarketAnalysis, s: Settings) -> None:
         st.sl = st.sizing_entry - st.sign * min_dist
         st.warnings.append(f"stop éloigné à {st.sl:.6g} (au lieu de {ancien:.6g}) : au moins {s.min_sl_pct:g} % du prix")
     snap_to_tick(st, getattr(inst, "tick_size", 0) or 0)
+    # Niveau gênant entre l'entrée et le TP1 (ex. MON et WLD du 04/10, résistance à 0,4–0,5R) : le prix bute dessus et revient.
+    # Pas de 🟢 tant que ce niveau n'est pas cassé (le prochain scan le revoit).
+    obst = next((w for w in st.warnings if w.startswith("niveau gênant proche")), None)
+    if obst:
+        st.rejections.append(f"{obst} avant le TP1 : attendre sa cassure (clôture 15m au-delà)")
+        st.trigger = st.trigger or "cassure du niveau gênant avant le TP1 (clôture 15m au-delà)"
+    # Marché trop peu actif : des bougies 15 min sans aucun échange = carnet vide, stops et sorties mal exécutés.
+    df15v = (getattr(a, "frames", None) or {}).get("15m")
+    if df15v is not None and len(df15v) and "volume" in df15v:
+        vides = int((df15v["volume"].iloc[-24:] <= 0).sum())
+        if vides >= 3:
+            st.rejections.append(f"marché trop peu actif ({vides} bougies 15 min sans échange sur 6 h)")
     if st.direction == "SHORT" and not inst.can_short:
         st.rejections.append("SHORT impossible sur cet instrument (pas de marge/perp)")
     if st.direction == "LONG" and not inst.can_long:

@@ -454,7 +454,7 @@ def apply_edges(setups: list[Setup], edges: dict, s) -> None:
 
 
 REFUS_DEFINITIFS = ("impossible", "R:R", "SL trop serré", "désactivée", "perd en vrai", "trop étendu", "volatilité extrême",
-                    "liquidité", "spread", "profondeur", "delisting")
+                    "liquidité", "spread", "profondeur", "delisting", "peu actif")
 
 
 def apply_live_edges(setups: list[Setup], s) -> None:
