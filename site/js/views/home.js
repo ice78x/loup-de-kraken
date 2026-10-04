@@ -4,7 +4,7 @@ import { ladder } from "../ladder.js";
 import { goLive } from "../live.js";
 import { FINI, PROCHE_PCT, SEUIL_SOLIDE, espace, ordre, setupCard } from "../setup.js";
 import { riskBudget } from "../sizing.js";
-import { soldeBloc, soldeLive } from "../solde.js";
+import { bilanCompte, soldeBloc, soldeLive } from "../solde.js";
 import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast } from "../ui.js";
 
 const VERDICT = {
@@ -91,6 +91,7 @@ export async function render(main, ctx) {
   const watch = sigs.filter((s) => s.status === "WATCH");
   const budget = riskBudget(me, mine);
   const open = mine.filter((t) => t.status === "ouvert");
+  const compte = bilanCompte(me, mine);
   const [titre, sous] = scan ? VERDICT[scan.verdict]?.(trades.length) || VERDICT.NONE() : ["Le bot n'a pas encore scanné", "Le premier scan automatique arrive vers " + nextScan() + ". Tu peux aussi le lancer maintenant."];
   const icon = scan?.verdict === "TRADE" ? "🟢" : ["WATCH", "NONE"].includes(scan?.verdict) ? "🟡" : "🛑";
 
@@ -101,10 +102,23 @@ export async function render(main, ctx) {
     <section class="verdict">
       <img src="img/logo.svg" alt="">
       <div>
-        <h1 id="verdict-titre">${scan ? icon + " " : ""}${esc(titre)}</h1>
-        <p id="verdict-sous">${esc(sous)}</p>
-        <div class="ligne" id="bilan"></div>
-        <p class="small">${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)})${prev ? ` · précédent ${dt(prev.created_at).split(" ")[1] || dt(prev.created_at)}` : ""} · ` : ""}prochain vers ${nextScan()}</p>
+        <h1>💶 ${eur(compte.cash)} disponibles</h1>
+        <p>Solde ${eur(compte.solde)}${compte.marge > 0.005 ? ` · ${eur(compte.marge)} bloqués dans tes trades` : ""} ·
+          ${compte.enCours ? `<b>${compte.enCours} trade${compte.enCours > 1 ? "s" : ""} en cours</b> (${eur(compte.risque)} en jeu au stop)` : "aucun trade en cours"}</p>
+        <div class="ligne bilan-compte">
+          <span class="pastille ambre">⏳ ${compte.enCours} en cours</span>
+          <span class="pastille long">🎯 TP1 ${compte.tp1}</span>
+          <span class="pastille long">🎯 TP2 ${compte.tp2}</span>
+          <span class="pastille long">🏆 TP3 ${compte.tp3}</span>
+          <span class="pastille short">❌ SL ${compte.sl}</span>
+          <span class="pastille">🛡 stop remonté ${compte.slProtege}</span>
+          ${compte.liquidation ? `<span class="pastille short">💥 liquidé ${compte.liquidation}</span>` : ""}
+          ${compte.autres ? `<span class="pastille">✋ fermé à la main ${compte.autres}</span>` : ""}
+        </div>
+        <p class="small">${compte.clos ? `${compte.clos} trade${compte.clos > 1 ? "s" : ""} terminé${compte.clos > 1 ? "s" : ""} · ${compte.gagnants} gagnant${compte.gagnants > 1 ? "s" : ""} · résultat <b class="${cls(compte.resultat)}">${eur(compte.resultat, true)}</b>` : "Aucun trade terminé pour l'instant."}
+          <a href="#/trades">Mes trades →</a></p>
+        <p class="small muted" id="verdict-bot">🤖 Bot : ${scan ? icon + " " : ""}<b id="verdict-titre">${esc(titre)}</b> · <span id="verdict-sous">${esc(sous)}</span><br>
+          ${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)})${prev ? ` · précédent ${dt(prev.created_at).split(" ")[1] || dt(prev.created_at)}` : ""} · ` : ""}prochain vers ${nextScan()}</p>
       </div>
     </section>
 
@@ -181,20 +195,14 @@ export async function render(main, ctx) {
     const sl = vus.filter((s) => code(s) === "stop").length;
     const enJeu = vus.filter((s) => !FINI.includes(code(s))).length;
     const sansEntree = vus.filter((s) => ["parti", "expire", "serre"].includes(code(s))).length;
-    const bilan = main.querySelector("#bilan");
-    bilan.innerHTML = vus.length ? `<span class="pastille long">🎯 ${tp} TP touché${tp > 1 ? "s" : ""}</span>
-      <span class="pastille short">❌ ${sl} SL touché${sl > 1 ? "s" : ""}</span>
-      <span class="pastille ambre">⏳ ${enJeu} en jeu</span>
-      ${sansEntree ? `<span class="pastille">🏃 ${sansEntree} sans entrée</span>` : ""}
-      <span class="small muted">${vus.length < sigs.length ? "lecture des prix…" : `sur ${sigs.length} setup${sigs.length > 1 ? "s" : ""} ${prev ? "des 2 derniers scans" : "du dernier scan"}`}</span>` : "";
     const h1 = main.querySelector("#verdict-titre"), p = main.querySelector("#verdict-sous");
     const ouverts = trades.filter((s) => phases.has(s.id) && !FINI.includes(code(s)));
     if (ouverts.length) {
-      h1.textContent = `🟢 ${ouverts.length} trade${ouverts.length > 1 ? "s" : ""} validé${ouverts.length > 1 ? "s" : ""}`;
+      h1.textContent = `${ouverts.length} trade${ouverts.length > 1 ? "s" : ""} validé${ouverts.length > 1 ? "s" : ""}`;
       p.textContent = sous0;
     } else if (tp || sl) {
-      h1.textContent = [tp ? `🎯 ${tp} TP touché${tp > 1 ? "s" : ""}` : "", sl ? `❌ ${sl} SL touché${sl > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
-      p.textContent = `Sur les ${sigs.length} setup${sigs.length > 1 ? "s" : ""} des ${prev ? "2 derniers scans" : "dernier scan"}. ${enJeu ? `${enJeu} encore en jeu : regarde les cartes ci-dessous.` : "Plus rien en jeu : attends le prochain scan."}`;
+      h1.textContent = [tp ? `${tp} setup${tp > 1 ? "s" : ""} au TP` : "", sl ? `${sl} setup${sl > 1 ? "s" : ""} au SL` : ""].filter(Boolean).join(" · ");
+      p.textContent = `sur les ${sigs.length} setups ${prev ? "des 2 derniers scans" : "du dernier scan"}${enJeu ? `, ${enJeu} encore en jeu` : ""}${sansEntree ? `, ${sansEntree} sans entrée` : ""}`;
     } else {
       h1.textContent = titre0; p.textContent = sous0;
     }

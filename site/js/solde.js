@@ -2,7 +2,7 @@
 // Le solde enregistré dans « Mon compte » est un point de départ (daté). À partir de là, chaque euro gagné ou perdu
 // sur tes trades (frais d'entrée, TP encaissés, clôtures, stops — paper et réel) s'y ajoute automatiquement.
 // Quand tu corriges ton solde dans « Mon compte » (dépôt, retrait, alignement sur Kraken), on repart de cette valeur.
-import { pnlBreakdown } from "./sizing.js";
+import { openRiskEur, pnlBreakdown, usedMarginEur } from "./sizing.js";
 import { cls, dt, eur } from "./ui.js";
 
 /**
@@ -76,4 +76,29 @@ export function soldeLive(root, me) {
   tick();
   const timer = setInterval(tick, 30_000);
   return () => { stop = true; clearInterval(timer); };
+}
+
+
+/**
+ * Bilan du COMPTE du membre (en-tête de l'accueil) : argent disponible, trades en cours, objectifs et stops touchés.
+ * Uniquement ses trades enregistrés (rien n'est estimé). Les trades annulés ne comptent pas.
+ */
+export function bilanCompte(me, trades) {
+  const list = (trades || []).filter((t) => t.status !== "annule");
+  const ouverts = list.filter((t) => t.status === "ouvert");
+  const clos = list.filter((t) => t.status === "clos");
+  const solde = +(me.solde?.actuel ?? me.balance_eur) || 0;
+  const marge = usedMarginEur(ouverts);
+  const raison = (t) => String(t.close_reason || "");
+  return {
+    solde, marge, cash: Math.max(0, solde - marge),
+    enCours: ouverts.length, risque: ouverts.reduce((a, t) => a + openRiskEur(t), 0),
+    tp1: list.filter((t) => t.tp1_hit).length, tp2: list.filter((t) => t.tp2_hit).length, tp3: list.filter((t) => t.tp3_hit).length,
+    sl: clos.filter((t) => raison(t) === "SL").length,                 // stop d'origine touché (perte pleine)
+    slProtege: clos.filter((t) => raison(t) === "SL ajusté").length,   // stop remonté (break-even ou mieux) touché après un TP
+    liquidation: clos.filter((t) => raison(t) === "Liquidation").length,
+    autres: clos.filter((t) => !["SL", "SL ajusté", "Liquidation"].includes(raison(t)) && !/^TP/.test(raison(t))).length,
+    clos: clos.length, gagnants: clos.filter((t) => +t.realized_pnl_eur > 0).length,
+    resultat: clos.reduce((a, t) => a + (+t.realized_pnl_eur || 0), 0),
+  };
 }
