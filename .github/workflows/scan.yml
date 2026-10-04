@@ -47,6 +47,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           PYTHONUNBUFFERED: "1"
           TRANSLATE_EMAIL: ${{ secrets.TRANSLATE_EMAIL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SCAN_MODE: ${{ github.event.inputs.mode || 'normal' }}
           SCAN_SYMBOL: ${{ github.event.inputs.symbol || '' }}
           FUTURES_ENABLED: "true"

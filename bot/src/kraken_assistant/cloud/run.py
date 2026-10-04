@@ -186,6 +186,12 @@ def push_scan(sb: Supabase, rep, tr=None) -> int:
             sb.upsert("signal_outcomes", pending_rows(inserted, pairs), "signal_id")
         except (SupabaseError, KeyError, TypeError, ValueError, AttributeError) as e:
             log.warning("mémoire des signaux non enregistrée (lance supabase/schema.sql ?) : %s", e)
+        # Notification Telegram des nouveaux 🟢 (si les secrets TELEGRAM_* sont configurés). Jamais bloquant.
+        try:
+            from .notify import notify_trades
+            notify_trades(sb, inserted)
+        except Exception as e:  # noqa: BLE001 — une notification ratée ne doit jamais casser le scan
+            log.warning("notification Telegram non envoyée : %s", type(e).__name__)
     return row["id"]
 
 
