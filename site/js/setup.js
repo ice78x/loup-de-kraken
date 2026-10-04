@@ -43,6 +43,8 @@ export function touches(s, candles = []) {
 
 /** Stop minimal (% du prix), comme le bot (min_sl_pct) : en dessous, le setup n'est pas jouable. */
 export const STOP_MIN_PCT = 0.35;
+/** Phases « terminées » : on n'y entre plus (stop, objectif, parti sans nous, expiré, stop trop serré). */
+export const FINI = ["stop", "tp", "parti", "expire", "serre"];
 
 export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   const lo = +s.entry_low, hi = +s.entry_high, sl = +s.sl, tp1 = +s.tp1;
@@ -225,7 +227,7 @@ export const PROCHE_PCT = 0.5;
  * ph = résultat de phase() (null tant que le prix n'est pas lu).
  */
 export function espace(s, ph) {
-  if (ph && ["stop", "tp", "parti", "expire", "serre"].includes(ph.code)) return "fini";
+  if (ph && FINI.includes(ph.code)) return "fini";
   if (ph && (["go", "condition", "zone"].includes(ph.code) || (ph.code === "attendre" && ph.dist != null && ph.dist <= PROCHE_PCT))) return "imminent";
   const net = scenario(s, 1);
   if (net && net.tout != null && net.tout <= 0) return "fragile"; // les frais Kraken mangent le gain : jamais dans « plus solides »

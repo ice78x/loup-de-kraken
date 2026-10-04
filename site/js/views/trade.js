@@ -5,7 +5,8 @@ import { ladder } from "../ladder.js";
 import { krakenLink, ohlc, prices } from "../market.js";
 import { TP_SPLIT, closePart, pnlBreakdown, recalculerFrais } from "../sizing.js";
 import { krakenFees } from "../fees.js";
-import { STRAT, busy, cls, dt, esc, eur, modal, num, pq, px, rr, toast } from "../ui.js";
+import { STRAT, busy, cls, dt, esc, eur, modal, nextScan, num, pq, px, rr, toast } from "../ui.js";
+import { depuisDernierPassage, texteDepuis } from "../suivi.js";
 
 const ev = (text) => ({ at: new Date().toISOString(), by: "membre", text });
 
@@ -51,6 +52,7 @@ export async function render(main, ctx, id) {
       <p style="margin:8px 0 0"><button class="btn principal mini" id="refrais-ok">Recalculer avec les frais ${esc(grille.label)}</button></p></div>` : ""}
 
     ${t.status === "ouvert" && t.advice ? `<div class="alerte"><b>Conseil du bot</b> (${dt(t.advice_at)}) : ${esc(t.advice)}</div>` : ""}
+    <div id="depuis" aria-live="polite"></div>
 
     <div class="split section">
       <figure><div class="graph" id="chart"></div><figcaption>Bougies 15 min en direct depuis Kraken.</figcaption></figure>
@@ -77,7 +79,15 @@ export async function render(main, ctx, id) {
   const lines = [{ price: +t.entry_price, color: "#F2B544", title: "Entrée" }, ...(+t.sl > 0 ? [{ price: +t.sl, color: "#FF6B6B", title: "SL" }] : []), ...(t.liq_price ? [{ price: +t.liq_price, color: "#FF6B6B", title: "Liquidation", dashed: true }] : []),
     ...[t.tp1, t.tp2, t.tp3].map((x, i) => x && { price: +x, color: "#3DDC97", title: `TP${i + 1}`, width: 1 }).filter(Boolean)];
   let chart = null;
-  ohlc(t, 15).then((c) => { if (el.isConnected && c?.length) chart = candleChart(el, c.slice(-160), { lines }); else el.innerHTML = '<p class="vide">Graphique indisponible.</p>'; })
+  ohlc(t, 15).then((c) => {
+    if (el.isConnected && c?.length) chart = candleChart(el, c.slice(-160), { lines }); else { el.innerHTML = '<p class="vide">Graphique indisponible.</p>'; return; }
+    // TP / SL touchés depuis le dernier passage du bot (la nuit, il ne tourne pas) : on le montre tout de suite.
+    const d = depuisDernierPassage(t, c);
+    const box = main.querySelector("#depuis");
+    if (d && box) box.innerHTML = `<div class="alerte ${d.sl ? "rouge" : ""}"><b>${esc(texteDepuis(d, nextScan()))}</b>
+      <p class="small" style="margin:6px 0 0">${t.mode === "reel" ? "Trade réel : vérifie sur Kraken que tes ordres TP / SL ont bien été exécutés."
+        : "Trade d'entraînement : tu n'as rien à faire."} Tu peux aussi l'enregistrer toi-même avec « Encaisser une partie » ou « Clôturer ».</p></div>`;
+  })
     .catch(() => { el.innerHTML = '<p class="vide">Graphique indisponible (Kraken ne répond pas).</p>'; });
   ctx.onLeave(() => chart?.remove());
   const reload = () => render(main, ctx, id);

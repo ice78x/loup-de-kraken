@@ -2,7 +2,7 @@
 import { backend } from "../data.js";
 import { ladder } from "../ladder.js";
 import { goLive } from "../live.js";
-import { PROCHE_PCT, SEUIL_SOLIDE, espace, ordre, setupCard } from "../setup.js";
+import { FINI, PROCHE_PCT, SEUIL_SOLIDE, espace, ordre, setupCard } from "../setup.js";
 import { riskBudget } from "../sizing.js";
 import { soldeBloc, soldeLive } from "../solde.js";
 import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast } from "../ui.js";
@@ -163,15 +163,18 @@ export async function render(main, ctx) {
   const majVerdict = () => {
     const vus = sigs.filter((s) => phases.has(s.id));
     const code = (s) => phases.get(s.id).code;
-    const tp = vus.filter((s) => ["tp", "parti"].includes(code(s))).length;
+    const tp = vus.filter((s) => code(s) === "tp").length; // « parti sans nous » n'est pas un gain : jamais entré
     const sl = vus.filter((s) => code(s) === "stop").length;
-    const enJeu = vus.filter((s) => !["tp", "parti", "stop", "expire"].includes(code(s))).length;
+    const enJeu = vus.filter((s) => !FINI.includes(code(s))).length;
+    const sansEntree = vus.filter((s) => ["parti", "expire", "serre"].includes(code(s))).length;
     const bilan = main.querySelector("#bilan");
     bilan.innerHTML = vus.length ? `<span class="pastille long">🎯 ${tp} TP touché${tp > 1 ? "s" : ""}</span>
       <span class="pastille short">❌ ${sl} SL touché${sl > 1 ? "s" : ""}</span>
-      <span class="pastille ambre">⏳ ${enJeu} en jeu</span>${vus.length < sigs.length ? '<span class="small muted">lecture des prix…</span>' : ""}` : "";
+      <span class="pastille ambre">⏳ ${enJeu} en jeu</span>
+      ${sansEntree ? `<span class="pastille">🏃 ${sansEntree} sans entrée</span>` : ""}
+      <span class="small muted">${vus.length < sigs.length ? "lecture des prix…" : `sur ${sigs.length} setup${sigs.length > 1 ? "s" : ""} ${prev ? "des 2 derniers scans" : "du dernier scan"}`}</span>` : "";
     const h1 = main.querySelector("#verdict-titre"), p = main.querySelector("#verdict-sous");
-    const ouverts = trades.filter((s) => phases.has(s.id) && !["stop", "tp", "parti", "expire"].includes(code(s)));
+    const ouverts = trades.filter((s) => phases.has(s.id) && !FINI.includes(code(s)));
     if (ouverts.length) {
       h1.textContent = `🟢 ${ouverts.length} trade${ouverts.length > 1 ? "s" : ""} validé${ouverts.length > 1 ? "s" : ""}`;
       p.textContent = sous0;
