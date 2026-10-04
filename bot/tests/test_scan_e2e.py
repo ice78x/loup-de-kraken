@@ -140,3 +140,13 @@ def test_verification_express_une_seule_paire(settings, tmp_path):
     assert rep.mode == "cible"
     assert rep.counts["analysés"] == 1
     assert {o["display"] for o in rep.opportunities} <= {key["display"]}
+
+
+def test_les_setups_refuses_ne_sont_pas_publies_en_surveiller(settings, tmp_path):
+    """Ex. XAUT du 04/10 : stop éloigné à 0,35 % → R:R 0,1 / 0,2 → refusé : il ne doit pas apparaître en 🟡."""
+    from kraken_assistant.scanner.scan import REFUS_DEFINITIFS
+    for seed in range(4):
+        app, _ = build(settings, tmp_path, seed)
+        rep = scan(app)
+        for w in rep.watch:
+            assert not any(any(k in r for k in REFUS_DEFINITIFS) for r in w.rejections), (w.display, w.rejections)

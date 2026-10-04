@@ -386,8 +386,10 @@ def _scan(app: App, mode: str, focus: set[str] | None) -> ScanReport:
     rep.trades = accepted
 
     # 13. niveaux à surveiller -----------------------------------------------------
+    # Un 🟡 doit pouvoir devenir un 🟢 avec la confirmation. Un setup refusé pour une raison qui ne changera pas
+    # (gain trop faible pour le risque, stop trop serré, liquidité, stratégie bloquée…) n'est pas publié.
     watch = [x for x in setups if x.status == WATCH and x.score >= s.score_watch
-             and not any("impossible" in r for r in x.rejections)]
+             and not any(any(k in r for k in REFUS_DEFINITIFS) for r in x.rejections)]
     best_w: dict[str, Setup] = {}
     for w in sorted(watch, key=lambda x: -x.score):
         if w.inst_key not in best_w and w.inst_key not in seen_inst:
@@ -446,6 +448,10 @@ def apply_edges(setups: list[Setup], edges: dict, s) -> None:
                 st.status = WATCH
             else:
                 st.status = TRADE if st.score >= e.score_threshold else WATCH
+
+
+REFUS_DEFINITIFS = ("impossible", "R:R", "SL trop serré", "désactivée", "perd en vrai", "trop étendu", "volatilité extrême",
+                    "liquidité", "spread", "profondeur", "delisting")
 
 
 def apply_live_edges(setups: list[Setup], s) -> None:

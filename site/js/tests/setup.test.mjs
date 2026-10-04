@@ -179,3 +179,12 @@ test("vérification express : bouton sur « Condition remplie », setup abandonn
   assert.equal(espace(s, ab), "fini");
   assert.match(phaseHtml({ code: "condition", icone: "✅", titre: "Condition remplie", texte: "x", verif: "futures:PF_TAOUSD" }), /data-verif="futures:PF_TAOUSD"/);
 });
+
+test("XAUT du 04/10 : stop 14 $ au-dessus, TP1 à 1,5 $ (R:R 0,1) → « Refusé », rangé dans Terminés", async () => {
+  const { phase, espace } = await import("../setup.js");
+  const s = { status: "WATCH", direction: "SHORT", entry_low: 4142.1, entry_high: 4142.4, sl: 4156.7, tp1: 4140.6, tp2: 4139.4, tp3: 4138,
+    rr: [0.1, 0.18, 0.28], warnings: ["mauvais ratio R:R (0.1 / 0.2 / 0.3)"], quote: "USD", score: 68, expires_at: new Date(Date.now() + 3600e3).toISOString() };
+  const ph = phase(s, 4141.9);
+  assert.equal(ph.code, "refuse");
+  assert.equal(espace(s, ph), "fini");
+});
