@@ -20,7 +20,7 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   (scan → table `scans`/`signals`, suivi des `trades` membres, réglages lus dans `bot_settings`).
 - **Apprentissage** : `bot/.../cloud/learning.py` rejoue après chaque scan les signaux des 4 derniers jours sur les vraies bougies 15m
   (entrée = pire prix de la zone, stop avant TP dans une même bougie, 30/40/30, BE après TP1, frais, 48 h max) → table `signal_outcomes`
-  (permanente) → vue `signal_stats`. Relue à chaque scan (`live_edges`) : stratégie×classe ≥ 15 trades et R moyen < −0,15 → plus de 🟢.
+  (permanente ; chaque signal y est écrit dès sa publication, `outcome='en_cours'` + `features` = contexte complet) → vue `signal_stats`. Relue à chaque scan (`live_edges`) : stratégie×classe ≥ 15 trades et R moyen < −0,15 → plus de 🟢.
   Affiché dans « Mes trades » (🧠 Ce que le bot apprend).
 - `.github/workflows/` : `scan.yml` (horaire), `optimize.yml` (dimanche), `tests.yml` (à chaque push).
 

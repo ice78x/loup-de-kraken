@@ -20,6 +20,7 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 FINAUX = ("sl", "tp3", "be", "temps", "non_entre")
+EN_COURS = "en_cours"
 
 
 def _f(x):
@@ -101,6 +102,53 @@ def outcome_row(sig: dict, res: dict) -> dict:
     }
 
 
+def _r(x, n=4):
+    try:
+        return None if x is None else round(float(x), n)
+    except (TypeError, ValueError):
+        return None
+
+
+def features(st, a, mode: str = "normal") -> dict:
+    """Contexte du setup au moment du signal (pour comprendre plus tard ce qui marche) : rien d'inventé, que l'analyse du bot."""
+    f: dict = {"mode": mode, "score": _r(st.score, 1), "composantes": dict(st.components or {}), "confirme": bool(st.confirmed),
+               "exceptionnel": bool(st.exceptional), "extension_atr15": _r(st.extension_atr, 2), "rr": st.r_multiples(),
+               "nb_alertes": len(st.warnings or []), "refus": list(st.rejections or [])[:5]}
+    if a is not None:
+        px = float(a.price) if a.price else None
+        f.update({
+            "prix": _r(px, 8), "atr15_pct": _r(a.atr15 / px * 100, 3) if px else None, "atr1h_pct": _r(a.vol.atr_1h_pct, 3),
+            "regime_volatilite": a.vol.regime, "tendance": {tf: a.structures[tf].trend for tf in ("4h", "1h", "15m") if tf in a.structures},
+            "ema_1h": a.structures["1h"].ema_bias if "1h" in a.structures else None, "rsi1h": _r(a.rsi1h, 1), "rsi15": _r(a.rsi15, 1),
+            "rvol15": _r(a.rvol15_last, 2), "au_dessus_vwap": (px > a.vwap15) if (px and a.vwap15) else None,
+            "fond_jour": a.htf.daily_trend, "fond_semaine": a.htf.weekly_trend, "position_52s": _r(a.htf.range_position, 3),
+            "catalyseur": a.catalyst.label(), "catalyseur_majeur": bool(a.catalyst.has_major),
+            "volume_24h_eur": _r(a.liquidity.volume_24h_eur, 0) if a.liquidity else None,
+            "spread_pct": _r(a.liquidity.spread_pct, 4) if a.liquidity else None,
+        })
+    return f
+
+
+def pending_rows(inserted: list[dict], pairs: list[tuple]) -> list[dict]:
+    """Lignes « en cours » de signal_outcomes, écrites dès la publication du signal (résultat rempli plus tard)."""
+    out = []
+    for row, (st, a, mode) in zip(inserted, pairs):
+        created = pd.Timestamp(row.get("created_at") or datetime.now(timezone.utc))
+        created = created.tz_convert("Europe/Paris") if created.tzinfo else created.tz_localize("UTC").tz_convert("Europe/Paris")
+        entry = row["entry_high"] if row["direction"] == "LONG" else row["entry_low"]
+        out.append({
+            "signal_id": row["id"], "created_at": row.get("created_at") or datetime.now(timezone.utc).isoformat(),
+            "instrument_key": row.get("instrument_key"), "display": row.get("display"), "asset_class": row.get("asset_class"),
+            "strategy": row.get("strategy"), "direction": row.get("direction"), "status": row.get("status"), "score": row.get("score"),
+            "entry_low": row.get("entry_low"), "entry_high": row.get("entry_high"), "sl": row.get("sl"),
+            "tp1": row.get("tp1"), "tp2": row.get("tp2"), "tp3": row.get("tp3"),
+            "sl_pct": _r(abs(entry - row["sl"]) / entry * 100, 4) if entry and row.get("sl") else None,
+            "outcome": EN_COURS, "r": None, "tp_hits": 0, "hour_paris": int(created.hour), "weekday": int(created.weekday()),
+            "features": features(st, a, mode),
+        })
+    return out
+
+
 def live_edges(rows: list[dict]) -> dict:
     """Vue signal_stats → {"stratégie|classe": {"n", "win_rate", "avg_r"}} (signaux 🟢 entrés seulement)."""
     out = {}
@@ -121,7 +169,8 @@ def resolve_signals(sb, app, days: int = 4, max_signals: int = 300) -> int:
     cols = "id,created_at,expires_at,status,instrument_key,display,venue,api_symbol,api_asset_class,asset_class,strategy," \
            "direction,score,entry_low,entry_high,sl,tp1,tp2,tp3"
     sigs = sb.select("signals", {"select": cols, "created_at": f"gte.{since}", "order": "created_at.asc", "limit": str(max_signals)})
-    done = {r["signal_id"] for r in sb.select("signal_outcomes", {"select": "signal_id", "created_at": f"gte.{since}"})}
+    done = {r["signal_id"] for r in sb.select("signal_outcomes", {"select": "signal_id,outcome", "created_at": f"gte.{since}"})
+            if r.get("outcome") != EN_COURS}
     todo = [s for s in sigs if s["id"] not in done]
     cache: dict[str, pd.DataFrame | None] = {}
     rows = []

@@ -37,10 +37,12 @@ export function statsBlock(st) {
   </dl>${lecture ? `<p class="small muted">${lecture}</p>` : ""}`;
 }
 
-const NOM_FIN = { sl: "stop", be: "stop au prix d'entrée", tp3: "TP3", temps: "48 h écoulées", non_entre: "jamais entré" };
+const NOM_FIN = { sl: "stop", be: "stop au prix d'entrée", tp3: "TP3", temps: "48 h écoulées", non_entre: "jamais entré", en_cours: "en cours…" };
 /** Ce que le bot apprend : résultats RÉELS de ses signaux passés, rejoués sur les vraies bougies Kraken. */
 export function apprentissageBlock(rows, recents) {
   const verts = (rows || []).filter((r) => r.status === "TRADE" && +r.n > 0);
+  const enCours = (rows || []).reduce((a, r) => a + (+r.en_cours || 0), 0);
+  const memoire = (rows || []).reduce((a, r) => a + (+r.n || 0) + (+r.non_entres || 0) + (+r.en_cours || 0), 0);
   const tot = verts.reduce((a, r) => ({ n: a.n + +r.n, sum: a.sum + +r.sum_r, gagn: a.gagn + (+r.win_rate / 100) * +r.n }), { n: 0, sum: 0, gagn: 0 });
   const tete = tot.n ? `<dl class="chiffres">
       <div><dt>Signaux 🟢 entrés</dt><dd>${tot.n}</dd></div>
@@ -58,6 +60,7 @@ export function apprentissageBlock(rows, recents) {
   return `<section class="section"><h2>🧠 Ce que le bot apprend</h2>
     <p class="muted">Après chaque scan, le bot rejoue ses signaux passés sur les <b>vraies bougies Kraken</b> : entrée dans la zone, stop testé avant les objectifs,
       30 / 40 / 30 % aux TP, stop au prix d'entrée après le TP1, frais déduits. Une stratégie qui perd en vrai sur 15 trades ou plus ne donne plus de 🟢 (🚫).</p>
+    ${memoire ? `<p class="small">📚 <b>${memoire}</b> ${memoire > 1 ? "signaux" : "signal"} en mémoire (avec leur contexte : tendance, volatilité, volume, heure…)${enCours ? ` · <b>${enCours}</b> en attente de résultat` : ""}.</p>` : ""}
     ${tete || '<div class="vide"><strong>Pas encore de résultat enregistré</strong>Les premiers arrivent quelques heures après les prochains scans.</div>'}
     ${table}${liste}</section>`;
 }

@@ -71,3 +71,23 @@ def test_une_combinaison_perdante_ne_donne_plus_de_vert():
     apply_live_edges([a, b], s)
     assert a.status == WATCH and "perd en vrai" in a.rejections[0] and "20 trades" in a.edge_note
     assert b.status == TRADE                                               # 5 trades : pas assez pour juger
+
+
+def test_signal_enregistre_des_sa_publication_avec_son_contexte():
+    from kraken_assistant.cloud.learning import EN_COURS, pending_rows
+    st = Setup(inst_key="k", display="PF_TAOUSD", asset_class="crypto", strategy="rejet_sweep", direction="LONG", entry_low=304.9,
+               entry_high=305.5, sl=302.8, tps=[308.4, 310.6, 312.5], invalidation_price=302.8, invalidation_text="", action="",
+               status=TRADE, score=72, confirmed=True, components={"structure": 16, "volume": 8})
+    a = NS(price=305.6, atr15=1.2, rsi1h=55.0, rsi15=60.0, rvol15_last=1.4, vwap15=305.0,
+           vol=NS(atr_1h_pct=0.9, regime="normale"), structures={"4h": NS(trend="up", ema_bias="up"), "1h": NS(trend="range", ema_bias="up")},
+           htf=NS(daily_trend="up", weekly_trend="range", range_position=0.6),
+           catalyst=NS(label=lambda: "aucun", has_major=False), liquidity=NS(volume_24h_eur=5e6, spread_pct=0.02))
+    row = {"id": 42, "created_at": "2026-10-04T08:20:00+00:00", "instrument_key": "futures:PF_TAOUSD", "display": "PF_TAOUSD",
+           "asset_class": "crypto", "strategy": "rejet_sweep", "direction": "LONG", "status": "TRADE", "score": 72,
+           "entry_low": 304.9, "entry_high": 305.5, "sl": 302.8, "tp1": 308.4, "tp2": 310.6, "tp3": 312.5}
+    [p] = pending_rows([row], [(st, a, "normal")])
+    assert p["signal_id"] == 42 and p["outcome"] == EN_COURS and p["r"] is None
+    assert p["hour_paris"] == 10 and p["weekday"] == 6
+    f = p["features"]
+    assert f["composantes"]["structure"] == 16 and f["tendance"] == {"4h": "up", "1h": "range"} and f["au_dessus_vwap"] is True
+    assert f["rr"] == st.r_multiples() and abs(f["atr15_pct"] - 1.2 / 305.6 * 100) < 1e-3

@@ -29,7 +29,7 @@ from ..scanner.formatter import format_report
 from ..scanner.scan import scan
 from ..news.translate import Translator, explain
 from .supabase_rest import Supabase, SupabaseError
-from .learning import live_edges, resolve_signals
+from .learning import live_edges, pending_rows, resolve_signals
 from .tracker import advance_trade
 
 log = logging.getLogger("cloud")
@@ -139,7 +139,15 @@ def push_scan(sb: Supabase, rep, tr=None) -> int:
         "data_issues": rep.data_issues[:30], "duration_s": rep.duration_s})[0]
     rows = signal_rows(rep, row["id"], tr)
     if rows:
-        sb.insert("signals", rows, returning=False)
+        inserted = sb.insert("signals", rows, returning=True)
+        # Mémoire du bot : chaque signal publié est enregistré tout de suite (« en cours »), avec son contexte complet ;
+        # le résultat réel est rempli plus tard par l'apprentissage. Jamais bloquant pour le scan.
+        try:
+            pairs = [(sig.setup, rep.analyses.get(sig.setup.inst_key), rep.mode) for sig in rep.trades] + \
+                    [(w, rep.analyses.get(w.inst_key), rep.mode) for w in rep.watch if rep.analyses.get(w.inst_key)]
+            sb.upsert("signal_outcomes", pending_rows(inserted, pairs), "signal_id")
+        except (SupabaseError, KeyError, TypeError, ValueError, AttributeError) as e:
+            log.warning("mémoire des signaux non enregistrée (lance supabase/schema.sql ?) : %s", e)
     return row["id"]
 
 

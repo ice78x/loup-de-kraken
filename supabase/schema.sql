@@ -345,7 +345,7 @@ create table if not exists public.signal_outcomes (
   score         numeric,
   entry_low numeric, entry_high numeric, sl numeric, tp1 numeric, tp2 numeric, tp3 numeric,
   sl_pct        numeric,            -- distance du stop en % du prix
-  outcome       text not null,      -- sl | be (stop au prix d'entrée après TP1) | tp3 | temps (48 h) | non_entre
+  outcome       text not null,      -- en_cours | sl | be (stop au prix d'entrée après TP1) | tp3 | temps (48 h) | non_entre
   r             numeric,            -- résultat en R, net de frais (null si jamais entré)
   tp_hits       int default 0,
   entered_at    timestamptz,
@@ -353,15 +353,17 @@ create table if not exists public.signal_outcomes (
   hour_paris    int, weekday int,   -- 0 = lundi
   recorded_at   timestamptz not null default now()
 );
+alter table public.signal_outcomes add column if not exists features jsonb;   -- contexte du setup au moment du signal
 create index if not exists signal_outcomes_created_idx on public.signal_outcomes (created_at desc);
 
 create or replace view public.signal_stats with (security_invoker = true) as
 select status, strategy, asset_class,
-       count(*) filter (where outcome <> 'non_entre')                                   as n,
-       count(*) filter (where outcome = 'non_entre')                                    as non_entres,
-       round(avg((r > 0)::int) filter (where outcome <> 'non_entre') * 100, 1)          as win_rate,
-       round(avg(r) filter (where outcome <> 'non_entre'), 3)                           as avg_r,
-       round(coalesce(sum(r) filter (where outcome <> 'non_entre'), 0), 2)              as sum_r
+       count(*) filter (where outcome not in ('non_entre', 'en_cours'))                              as n,
+       count(*) filter (where outcome = 'non_entre')                                                 as non_entres,
+       round(avg((r > 0)::int) filter (where outcome not in ('non_entre', 'en_cours')) * 100, 1)       as win_rate,
+       round(avg(r) filter (where outcome not in ('non_entre', 'en_cours')), 3)                        as avg_r,
+       round(coalesce(sum(r) filter (where outcome not in ('non_entre', 'en_cours')), 0), 2)           as sum_r,
+       count(*) filter (where outcome = 'en_cours')                                                  as en_cours
 from public.signal_outcomes
 where created_at > now() - interval '120 days'
 group by status, strategy, asset_class;
