@@ -59,23 +59,23 @@ export function tradeForm(host, o) {
     </div>
     <p class="small muted" style="margin-top:-6px">Frais ${esc(grille.label)} (grille officielle Kraken). Un ordre limite exécuté tout de suite paie les frais « marché ».</p>
 
-    <div>
-      <div class="deux">
-        <label class="champ"><span>Quantité (${baseName})</span><input name="qty" inputmode="decimal" placeholder="0">
-          <small>${o.inst.ordermin ? `Minimum Kraken : ${o.inst.ordermin} ${baseName}` : "&nbsp;"}</small></label>
-        <label class="champ"><span>ou valeur de la position (${esc(q || "total")})</span><input name="amount" inputmode="decimal" placeholder="0">
-          <small id="max-pos">= quantité × prix d'entrée</small></label>
-      </div>
-      <div class="ligne small">
-        <span class="muted">Ou engager en marge :</span>
-        ${[10, 25, 50, 100].map((k) => `<button type="button" class="btn discret mini" data-marge="${k}">${k} %</button>`).join("")}
-        <span class="muted">du solde</span>
-      </div>
-    </div>
-
-    <label class="champ"><span>Levier : <b id="lev-v">x1</b></span>
+    <label class="champ"><span>Levier : <b id="lev-v">x1</b> <span class="small muted">· marge isolée</span></span>
       <input type="range" name="lev" min="1" max="${maxLev}" step="1" value="${o.levRef ? Math.min(maxLev, o.levRef) : dir0 === "SHORT" && !perp ? Math.min(2, maxLev) : 1}">
-      <small>${o.levRef ? `Levier conseillé pour ce trade : <b>x${o.levRef}</b>. ` : ""}Pour une même quantité, le levier réduit la marge bloquée et rapproche la liquidation ; il ne change <b>pas</b> ta perte au SL.</small></label>
+      <div class="ligne small">${[1, 2, 3, 5, 10].filter((x) => x <= maxLev).map((x) => `<button type="button" class="btn discret mini" data-lev="${x}">x${x}</button>`).join("")}</div>
+      <small>${o.levRef ? `Levier conseillé pour ce trade : <b>x${o.levRef}</b>. ` : ""}Le levier réduit la mise bloquée et rapproche la liquidation ; à quantité égale, il ne change <b>pas</b> ta perte au SL.</small></label>
+
+    <div class="champ taille">
+      <span>Taille : <b id="pct-v">0 %</b> de ton capital disponible</span>
+      <input type="range" name="pct" min="0" max="100" step="1" value="0" aria-label="Pourcentage du capital disponible engagé">
+      <div class="ligne small">${[0, 25, 50, 75, 100].map((x) => `<button type="button" class="btn discret mini" data-pct="${x}">${x} %</button>`).join("")}</div>
+      <small id="pct-info">Comme sur Kraken Pro : le curseur règle ta mise (marge) en % de ton capital disponible ; la quantité suit le levier.</small>
+    </div>
+    <div class="deux">
+      <label class="champ"><span>Quantité (${baseName})</span><input name="qty" inputmode="decimal" placeholder="0">
+        <small>${o.inst.ordermin ? `Minimum Kraken : ${o.inst.ordermin} ${baseName}` : "&nbsp;"}</small></label>
+      <label class="champ"><span>ou valeur de la position (${esc(q || "total")})</span><input name="amount" inputmode="decimal" placeholder="0">
+        <small id="max-pos">= quantité × prix d'entrée</small></label>
+    </div>
 
     <label class="champ"><span>Stop loss (SL) — facultatif</span><input name="sl" inputmode="decimal" value="${rp(s?.sl)}" placeholder="aucun">
       <small>Là où tu coupes si ça va mal. Sans stop, tu peux perdre la marge du trade (liquidation), jamais plus.</small></label>
@@ -155,6 +155,14 @@ export function tradeForm(host, o) {
       if (plan.lossAtSlEur > budget.available + 1e-6) errs.push(`Risque cumulé élevé : il te restait ${eur(budget.available)} de risque disponible selon tes réglages (tes autres trades ouverts comptent).`);
     }
     plan.blocking = errs;
+    // Curseur : position et texte (mise en € et en % du capital disponible)
+    const pc = pctDepuisQty();
+    if (!parPct) f.elements.pct.value = String(Math.min(100, Math.round(pc)));
+    f.querySelector("#pct-v").textContent = `${Math.round(Math.min(pc, 999))} %`;
+    f.querySelector("#pct-info").innerHTML = plan.qty
+      ? `Mise ${eur(plan.marginEur)} sur ${eur(capital())} disponibles · position ${eur(plan.notionalEur)} (x${lev})${pc > 100.5 ? " · <b class=\"perte\">plus que ton capital disponible</b>" : ""}`
+      : `Capital disponible : <b>${eur(capital())}</b>${capital() < p.balance - 0.005 ? ` (sur ${eur(p.balance)} : le reste est bloqué par tes trades ouverts)` : ""}.`;
+    f.querySelectorAll("[data-lev]").forEach((b) => { const on = +b.dataset.lev === lev; b.classList.toggle("actif", on); b.classList.toggle("discret", !on); });
     const mp = f.querySelector("#max-pos");
     if (mp && p.entry > 0 && p.eurPerQuote > 0) {
       const fe = (p.entryIsMaker ? p.feeMaker : p.feeTaker) / 100;
@@ -201,20 +209,38 @@ export function tradeForm(host, o) {
         R:R net de frais : ${plan.rrNet.map((r, i) => `TP${i + 1} ${r.toFixed(1)}`).join(" · ")}.</p></div>`;
   }
 
-  // Bouton « engager X % du solde en marge » (comme le curseur de Kraken) : quantité = solde × X % × levier / prix.
-  f.querySelectorAll("[data-marge]").forEach((b) => b.addEventListener("click", () => {
+  // Curseur « % du capital disponible » (comme Kraken Pro) : mise = capital libre × % ; quantité = mise × levier / prix,
+  // frais d'entrée gardés de côté pour que 100 % reste exécutable.
+  let parPct = false; // la dernière action est le curseur : en changeant le levier, on garde le % (la quantité suit)
+  const capital = () => { const p = base(); return Math.max(0, p.balance - (p.usedMarginEur || 0)); };
+  const feEntree = () => { const p = base(); return (p.entryIsMaker ? p.feeMaker : p.feeTaker) / 100; };
+  function qtyDepuisPct(pc) {
     const p = base();
-    if (!(p.entry > 0) || !(p.eurPerQuote > 0)) { toast("Renseigne d'abord le prix d'entrée.", true); return; }
-    const lev = +f.elements.lev.value;
-    const fe = (p.entryIsMaker ? p.feeMaker : p.feeTaker) / 100;
-    const libre = Math.max(0, p.balance - (p.usedMarginEur || 0));
-    const mise = Math.min((p.balance * +b.dataset.marge) / 100, libre);
-    const qq = (0.998 * mise * lev) / (p.entry * p.eurPerQuote * (1 + fe * lev)); // frais d'entrée + petite marge de sécurité, comme Kraken
-    lastEdited = "qty";
-    userTouchedLev = true; // on garde le levier choisi
-    const pas = 10 ** Math.min(p.lotDecimals ?? 8, Math.max(0, 5 - Math.floor(Math.log10(Math.max(qq, 1e-12))))); // arrondi vers le bas (6 chiffres)
-    f.elements.qty.value = String(Math.floor(qq * pas) / pas);
+    if (!(p.entry > 0) || !(p.eurPerQuote > 0)) return null;
+    const lev = +f.elements.lev.value, fe = feEntree();
+    const qq = (0.998 * capital() * (pc / 100) * lev) / (p.entry * p.eurPerQuote * (1 + fe * lev));
+    if (!(qq > 0)) return 0;
+    const pas = 10 ** Math.min(p.lotDecimals ?? 8, Math.max(0, 5 - Math.floor(Math.log10(Math.max(qq, 1e-12))))); // arrondi vers le bas
+    return Math.floor(qq * pas) / pas;
+  }
+  function pctDepuisQty() {
+    const p = base(), qq = v("qty"), cap = capital();
+    if (!(qq > 0) || !(p.entry > 0) || !(cap > 0)) return 0;
+    const lev = +f.elements.lev.value, notional = qq * p.entry * p.eurPerQuote;
+    return ((notional / lev + notional * feEntree()) / cap) * 100;
+  }
+  function appliquerPct(pc) {
+    const qq = qtyDepuisPct(pc);
+    if (qq == null) { toast("Renseigne d'abord le prix d'entrée.", true); return; }
+    f.elements.qty.value = qq > 0 ? String(qq) : "";
+    lastEdited = "qty"; parPct = true; userTouchedLev = true;
     update();
+  }
+  f.elements.pct.addEventListener("input", (e) => { e.stopPropagation(); appliquerPct(+e.target.value); });
+  f.querySelectorAll("[data-pct]").forEach((b) => b.addEventListener("click", () => { f.elements.pct.value = b.dataset.pct; appliquerPct(+b.dataset.pct); }));
+  f.querySelectorAll("[data-lev]").forEach((b) => b.addEventListener("click", () => {
+    f.elements.lev.value = b.dataset.lev; userTouchedLev = true;
+    if (parPct) appliquerPct(+f.elements.pct.value); else update();
   }));
   // Plafond : impossible de saisir une position plus grosse que ce que ta marge libre permet au levier max (frais compris).
   let ramene = 0;
@@ -238,9 +264,10 @@ export function tradeForm(host, o) {
       : "Plus de marge libre : tes trades ouverts bloquent déjà tout ton solde.", true);
   }
   f.addEventListener("input", (e) => {
-    if (e.target.name === "lev") userTouchedLev = true;
-    if (e.target.name === "qty") lastEdited = "qty";
-    if (e.target.name === "amount") lastEdited = "amount";
+    if (e.target.name === "pct") return;
+    if (e.target.name === "lev") { userTouchedLev = true; if (parPct) { appliquerPct(+f.elements.pct.value); return; } }
+    if (e.target.name === "qty") { lastEdited = "qty"; parPct = false; }
+    if (e.target.name === "amount") { lastEdited = "amount"; parPct = false; }
     update();
   });
   // Au moment de quitter le champ (pas à chaque chiffre tapé, pour ne pas couper la saisie)

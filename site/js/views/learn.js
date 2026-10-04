@@ -102,6 +102,10 @@ export async function render(main, ctx) {
           <label class="champ"><span>ou montant ($)</span><input name="amount" inputmode="decimal" value="100"><small>= quantité × prix</small></label>
         </div>
         <label class="champ"><span>Levier : <b id="pv">x5</b></span><input type="range" name="lev" min="1" max="10" value="5"></label>
+        <div class="champ taille"><span>Taille : <b id="spv">—</b> de ton solde</span>
+          <input type="range" name="spct" min="0" max="100" step="1" value="0" aria-label="Pourcentage du solde engagé">
+          <div class="ligne small">${[0, 25, 50, 75, 100].map((x) => `<button type="button" class="btn discret mini" data-spct="${x}">${x} %</button>`).join("")}</div>
+          <small>Comme sur Kraken Pro : le curseur règle ta mise en % de ton solde, la quantité suit le levier.</small></div>
         <div class="deux">
           <label class="champ"><span>Stop ($) — facultatif</span><input name="sl" inputmode="decimal" value="98" placeholder="aucun"></label>
           <label class="champ"><span>Take profit ($) — facultatif</span><input name="tp" inputmode="decimal" value="104" placeholder="aucun"></label>
@@ -213,11 +217,33 @@ export async function render(main, ctx) {
       <p class="small">Même quantité, levier différent : le résultat en € ne change pas, mais ta mise et la liquidation, si.
         Même mise, plus de levier : position plus grosse, gains <b>et</b> pertes multipliés.</p>`;
   };
+  // Curseur % du solde : quantité = solde × % × levier / (prix × (1 + frais × levier)) — les frais d'entrée tiennent dans le solde.
+  let parPct = false;
+  const versPct = (pc) => {
+    const entry = num(f.elements.entry.value), bal = num(f.elements.bal.value), lev = +f.elements.lev.value;
+    const fe = (f.elements.ord.value === "limit" ? fees.maker : fees.taker) / 100;
+    if (!(entry > 0) || !(bal > 0)) return;
+    f.elements.qty.value = pc > 0 ? +((bal * (pc / 100) * lev) / (entry * (1 + fe * lev))).toPrecision(6) : "";
+    dernier = "qty"; parPct = true;
+  };
+  const majPct = () => {
+    const entry = num(f.elements.entry.value), bal = num(f.elements.bal.value), qty = num(f.elements.qty.value), lev = +f.elements.lev.value;
+    const fe = (f.elements.ord.value === "limit" ? fees.maker : fees.taker) / 100;
+    const pc = entry > 0 && bal > 0 && qty > 0 ? ((qty * entry) / lev + qty * entry * fe) / bal * 100 : 0;
+    if (!parPct) f.elements.spct.value = String(Math.min(100, Math.round(pc)));
+    f.querySelector("#spv").textContent = `${Math.round(pc)} %`;
+  };
+  f.querySelectorAll("[data-spct]").forEach((b) => b.addEventListener("click", () => { f.elements.spct.value = b.dataset.spct; versPct(+b.dataset.spct); calc(); majPct(); }));
   f.addEventListener("input", (e) => {
+    if (e.target.name === "spct") versPct(+e.target.value);
+    else if (e.target.name === "lev" && parPct) versPct(+f.elements.spct.value);
+    else if (["qty", "amount", "entry", "bal"].includes(e.target.name)) parPct = false;
     if (e.target.name === "qty") dernier = "qty";
     if (e.target.name === "amount") dernier = "amount";
     calc();
+    majPct();
   });
-  f.addEventListener("change", calc);
+  f.addEventListener("change", () => { calc(); majPct(); });
   calc();
+  majPct();
 }

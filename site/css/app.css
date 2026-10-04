@@ -437,3 +437,7 @@ ol.etapes li { padding-left: 4px; }
 #perp-out { display: grid; gap: 10px; min-width: 0; }
 #bilan { margin-top: 6px; gap: 6px; }
 .alerte.rouge.interrupteur { background: var(--short-fond); border: 1px solid var(--short); }
+
+/* Curseur « taille en % du capital » (comme Kraken Pro) */
+.taille .ligne { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.taille .ligne .btn { padding-inline: 0; min-width: 0; }
