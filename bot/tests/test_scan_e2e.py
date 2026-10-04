@@ -128,3 +128,15 @@ def test_paires_usd_uniquement_par_defaut(settings, tmp_path):
     usd_eur = float(fk.series["ZEURZUSD"]["close"].iloc[-1])
     assert rep.fx["USD"] == pytest.approx(1 / usd_eur, rel=1e-3)
     assert not any("EUR/USD" in o["display"] for o in rep.opportunities)
+
+
+def test_verification_express_une_seule_paire(settings, tmp_path):
+    """Bouton « Vérifier ce setup » : le bot n'analyse que la paire demandée (plus rapide)."""
+    app, _ = build(settings, tmp_path)
+    full = scan(app)
+    key = next(o for o in full.opportunities if o["asset_class"] == "crypto")
+    k = next(i.key for i in app.discovery.discover() if i.display == key["display"])
+    rep = scan(app, mode="cible", focus={k})
+    assert rep.mode == "cible"
+    assert rep.counts["analysés"] == 1
+    assert {o["display"] for o in rep.opportunities} <= {key["display"]}

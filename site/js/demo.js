@@ -171,7 +171,9 @@ export function demoBackend() {
     settings: () => ok(settings),
     setSetting: (key, value) => { settings.find((s) => s.key === key).value = value; return ok({}); },
     settingsLog: () => ok([{ key: "score_trade", old_value: 55, new_value: 60, created_at: ago(12), profiles: { pseudo: "Nora" } }]),
-    requestScan: () => ok("DÉMO : en vrai, le scan est lancé sur GitHub et le résultat arrive en 2 à 4 minutes."),
+    requestScan: (mode) => ok(mode === "cible" ? "DÉMO : en vrai, le bot revérifie cette paire et répond en 1 à 3 minutes."
+      : "DÉMO : en vrai, le scan est lancé sur GitHub et le résultat arrive en 2 à 4 minutes."),
+    cibleScans: () => ok([]),
     trades: ({ userId, status, instrumentKey } = {}) => ok(trades.filter((t) => (!userId || t.user_id === userId) && (!status || t.status === status)
       && (!instrumentKey || t.instrument_key === instrumentKey))),
     trade: (id) => ok(trades.find((t) => t.id === +id)),

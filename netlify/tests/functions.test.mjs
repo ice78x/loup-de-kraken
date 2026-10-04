@@ -54,4 +54,15 @@ test("bouton SCAN : refuse sans connexion, limite à 1 toutes les 10 min, décle
   last = [{ created_at: new Date(Date.now() - 3 * 60000).toISOString() }];
   const tooSoon = await scan(req());
   assert.equal(tooSoon.status, 429);
+  // Vérification express d'un setup : limite séparée (2 min), symbole obligatoire et contrôlé
+  const cible = (b) => new Request("https://x/api/scan", { method: "POST", headers: { authorization: "Bearer tok" }, body: JSON.stringify(b) });
+  assert.equal((await scan(cible({ mode: "cible", symbol: "../../x" }))).status, 400);
+  last = [{ created_at: new Date(Date.now() - 3 * 60000).toISOString(), mode: "normal" }];
+  calls.length = 0;
+  const v = await scan(cible({ mode: "cible", symbol: "futures:PF_TAOUSD" }));
+  assert.equal(v.status, 200);
+  const gh = calls.find(([u]) => u.includes("api.github.com"));
+  assert.ok(gh);
+  last = [{ created_at: new Date(Date.now() - 60000).toISOString(), mode: "cible" }];
+  assert.equal((await scan(cible({ mode: "cible", symbol: "futures:PF_TAOUSD" }))).status, 429);
 });

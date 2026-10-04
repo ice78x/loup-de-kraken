@@ -12,6 +12,9 @@ on:
       mode:
         description: "normal ou urgent"
         default: "normal"
+      symbol:
+        description: "vérification express d'une seule paire (ex. futures:PF_TAOUSD) ; vide = scan complet"
+        default: ""
 
 concurrency:
   group: bot
@@ -45,6 +48,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           TRANSLATE_EMAIL: ${{ secrets.TRANSLATE_EMAIL }}
           SCAN_MODE: ${{ github.event.inputs.mode || 'normal' }}
+          SCAN_SYMBOL: ${{ github.event.inputs.symbol || '' }}
           FUTURES_ENABLED: "true"
           USER_AGENT: "loup-de-kraken/1.0 (private club bot)"
         run: python -m kraken_assistant.cloud.run scan

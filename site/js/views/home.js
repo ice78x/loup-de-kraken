@@ -69,7 +69,16 @@ export async function render(main, ctx) {
   const [sigsNow, sigsPrev] = await Promise.all([scan ? backend.signalsOf(scan.id) : [], prev ? backend.signalsOf(prev.id).catch(() => []) : []]);
   const cle = (s) => `${s.instrument_key}|${s.direction}`;
   const deja = new Set(sigsNow.map(cle));
-  const sigs = [...sigsNow, ...sigsPrev.filter((s) => !deja.has(cle(s))).map((s) => ({ ...s, precedent: prev.created_at }))];
+  let sigs = [...sigsNow, ...sigsPrev.filter((s) => !deja.has(cle(s))).map((s) => ({ ...s, precedent: prev.created_at }))];
+  // Vérifications express (bouton « Vérifier maintenant ») arrivées depuis le dernier scan : elles remplacent l'ancien setup de la paire.
+  const cibles = scan ? await backend.cibleScans(scan.created_at).catch(() => []) : [];
+  for (const c of cibles) {
+    const neufs = (await backend.signalsOf(c.id).catch(() => [])).map((s) => ({ ...s, verifie: c.created_at }));
+    const revus = new Set((c.opportunities || []).map((o) => o.display));
+    const cles = new Set(neufs.map(cle));
+    sigs = sigs.filter((s) => !cles.has(cle(s))).map((s) => (revus.has(s.display) && !s.verifie ? { ...s, revuSans: c.created_at } : s));
+    sigs.push(...neufs);
+  }
   // Levier maximum Kraken de chaque paire (pour le levier conseillé).
   const maxLev = new Map((await backend.instrumentsByKeys([...new Set(sigs.map((s) => s.instrument_key))]).catch(() => []))
     .map((i) => [i.key, +i.max_leverage || 1]));

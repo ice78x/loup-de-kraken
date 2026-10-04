@@ -259,6 +259,14 @@ def main(argv: list[str] | None = None) -> int:
 def _main(cmd: str) -> int:
     sb = Supabase(os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_SERVICE_KEY", ""))
     app = build(sb)
+    cible = (os.environ.get("SCAN_SYMBOL") or "").strip()
+    if cmd == "scan" and cible:
+        # Vérification express d'un seul setup : uniquement cette paire, résultat publié comme un scan « cible ».
+        rep = scan(app, mode="cible", focus={cible})
+        print(format_report(rep), flush=True)
+        sid = push_scan(sb, rep, Translator(app.db))
+        log.info("vérification express %s envoyée au site (scan %s, verdict %s)", cible, sid, rep.verdict)
+        return 0
     if cmd == "scan":
         rep = scan(app, mode=os.environ.get("SCAN_MODE", "normal"))
         print(format_report(rep), flush=True)

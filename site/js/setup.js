@@ -44,12 +44,16 @@ export function touches(s, candles = []) {
 /** Stop minimal (% du prix), comme le bot (min_sl_pct) : en dessous, le setup n'est pas jouable. */
 export const STOP_MIN_PCT = 0.35;
 /** Phases « terminées » : on n'y entre plus (stop, objectif, parti sans nous, expiré, stop trop serré). */
-export const FINI = ["stop", "tp", "parti", "expire", "serre"];
+export const FINI = ["stop", "tp", "parti", "expire", "serre", "annule"];
 
 export function phase(s, price, { candles = [], now = Date.now() } = {}) {
   const lo = +s.entry_low, hi = +s.entry_high, sl = +s.sl, tp1 = +s.tp1;
   const L = isLong(s);
   const watch = s.status === "WATCH";
+  if (s.revuSans) {
+    return { code: "annule", ton: "", icone: "🔎", titre: "Revérifié : setup abandonné",
+      texte: `À ${new Date(s.revuSans).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}, le bot a revérifié cette paire et ne garde plus ce setup. N'entre pas.` };
+  }
   const t = touches(s, candles);
   if (t.hit === "sl") {
     return { code: "stop", ton: "short", icone: "❌", titre: "SL touché",
@@ -108,8 +112,8 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
         return { code: "revu", ton: "ambre", icone: "🔎", titre: "Revérifié par le bot : pas encore validé",
           texte: `Au scan de ${new Date(scanAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}, le bot a vu cette bougie mais n'a pas validé le trade. Raison : ${raison}. Inutile de relancer tout de suite : attends le prochain scan automatique ou une nouvelle bougie.` };
       }
-      return { code: "condition", ton: "long", icone: "✅", titre: "Condition remplie",
-        texte: "La dernière bougie 15 min a clôturé dans la zone. Lance « Scanner maintenant » : le bot revérifie tout (volume, structure, risque) avant de valider." };
+      return { code: "condition", ton: "long", icone: "✅", titre: "Condition remplie", verif: s.instrument_key,
+        texte: "La dernière bougie 15 min a clôturé dans la zone. Touche « Vérifier maintenant » : le bot revérifie seulement cette paire (volume, structure, risque) en 1 à 3 minutes." };
     }
     return { code: "zone", ton: "ambre", icone: "👀", titre: "Dans la zone, pas encore confirmé",
       texte: `Attends la clôture de la bougie 15 min (dans ${minutesToClose(now)} min). Il manque : ${s.trigger_text || "une confirmation 15 min"}.` };
@@ -252,8 +256,52 @@ export function idee(s) {
     Son plan : ${L ? "acheter" : "vendre"} entre <b class="num">${pq(+s.entry_low, s.quote)}</b> et <b class="num">${pq(+s.entry_high, s.quote)}</b>.`;
 }
 
+// Vérifications express demandées depuis cette page (paire → heure de la demande), pour afficher « en cours ».
+const VERIFS = new Map();
+const VERIF_MAX = 6 * 60_000;
+
 export function phaseHtml(ph) {
-  return `<span class="feu-icone" aria-hidden="true">${ph.icone}</span><div><strong>${esc(ph.titre)}</strong><p>${esc(ph.texte)}</p></div>`;
+  const enCours = ph.verif && Date.now() - (VERIFS.get(ph.verif) || 0) < VERIF_MAX;
+  const bouton = !ph.verif ? "" : enCours
+    ? `<p class="small"><b>⏳ Vérification en cours</b> (lancée à ${new Date(VERIFS.get(ph.verif)).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}) : la page se met à jour toute seule.</p>`
+    : `<p><button type="button" class="btn principal mini" data-verif="${esc(ph.verif)}">⚡ Vérifier maintenant</button></p>`;
+  return `<span class="feu-icone" aria-hidden="true">${ph.icone}</span><div><strong>${esc(ph.titre)}</strong><p>${esc(ph.texte)}</p>${bouton}</div>`;
+}
+
+// Bouton « Vérifier maintenant » : le bot réanalyse seulement cette paire, puis la page se recharge à l'arrivée du résultat.
+if (typeof document !== "undefined") {
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest?.("[data-verif]");
+    if (!b || b.disabled) return;
+    const cle = b.dataset.verif;
+    b.disabled = true;
+    const { backend } = await import("./data.js");
+    const { toast } = await import("./ui.js");
+    const depart = new Date().toISOString();
+    try {
+      toast(await backend.requestScan("cible", cle));
+    } catch (err) {
+      b.disabled = false;
+      toast(err.message, true);
+      return;
+    }
+    VERIFS.set(cle, Date.now());
+    b.closest("p").innerHTML = "<b>⏳ Vérification en cours</b> : la page se met à jour toute seule.";
+    const fin = Date.now() + VERIF_MAX;
+    const attendre = async () => {
+      if (Date.now() > fin) { VERIFS.delete(cle); toast("La vérification prend plus de temps que prévu (GitHub est lent). Recharge la page dans quelques minutes.", true); return; }
+      const arrives = await backend.cibleScans(depart).catch(() => []);
+      if (arrives.length) {
+        VERIFS.delete(cle);
+        toast("✅ Vérification terminée : résultat du bot affiché.");
+        if (location.hash.startsWith("#/signal/")) location.hash = "#/"; // le résultat est un nouveau signal : direction l'accueil
+        else window.dispatchEvent(new HashChangeEvent("hashchange"));
+        return;
+      }
+      setTimeout(attendre, 20_000);
+    };
+    setTimeout(attendre, 30_000);
+  });
 }
 
 const chiffre = (label, val, cl, aide) =>
@@ -338,6 +386,7 @@ export function etat(s, ph) {
   if (ph?.code === "tp") return ["long", `🎯 TP${ph.tp} touché`];
   if (ph?.code === "parti") return ["", "trop tard"];
   if (ph?.code === "expire") return ["", "expiré"];
+  if (ph?.code === "annule") return ["", "abandonné"];
   return s.status === "WATCH" ? ["ambre", "🟡 à surveiller"] : ["long", "🟢 validé"];
 }
 

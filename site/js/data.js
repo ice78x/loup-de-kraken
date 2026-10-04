@@ -35,8 +35,10 @@ function supabaseBackend() {
     removeMember: (id) => q(sb.from("profiles").delete().eq("id", id)),
     balanceHistory: (id) => q(sb.from("balance_history").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(20)),
     // --- bot
-    latestScan: async () => (await q(sb.from("scans").select("*").order("created_at", { ascending: false }).limit(1)))[0] || null,
-    recentScans: (n = 2) => q(sb.from("scans").select("*").order("created_at", { ascending: false }).limit(n)),
+    // Scans complets (les vérifications express d'une seule paire, mode « cible », sont à part)
+    latestScan: async () => (await q(sb.from("scans").select("*").or("mode.is.null,mode.neq.cible").order("created_at", { ascending: false }).limit(1)))[0] || null,
+    cibleScans: (since) => q(sb.from("scans").select("id,created_at,opportunities").eq("mode", "cible").gt("created_at", since).order("created_at").limit(20)),
+    recentScans: (n = 2) => q(sb.from("scans").select("*").or("mode.is.null,mode.neq.cible").order("created_at", { ascending: false }).limit(n)),
     signalsOf: (scanId) => q(sb.from("signals").select("*").eq("scan_id", scanId).order("status").order("score", { ascending: false })),
     signal: (id) => q(sb.from("signals").select("*").eq("id", id).single()),
     recentSignals: (limit = 30) => q(sb.from("signals").select("id,created_at,display,direction,status,score,strategy").eq("status", "TRADE").order("created_at", { ascending: false }).limit(limit)),
@@ -63,8 +65,8 @@ function supabaseBackend() {
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),
     settingsLog: () => q(sb.from("bot_settings_log").select("*,profiles:changed_by(pseudo)").order("created_at", { ascending: false }).limit(20)),
-    requestScan: async (mode = "normal") => {
-      const r = await fetch("/api/scan", { method: "POST", headers: { authorization: `Bearer ${await backend.token()}`, "content-type": "application/json" }, body: JSON.stringify({ mode }) });
+    requestScan: async (mode = "normal", symbol = null) => {
+      const r = await fetch("/api/scan", { method: "POST", headers: { authorization: `Bearer ${await backend.token()}`, "content-type": "application/json" }, body: JSON.stringify({ mode, ...(symbol ? { symbol } : {}) }) });
       const b = await r.json().catch(() => ({ error: `Erreur ${r.status}` }));
       if (!r.ok) throw new Error(b.error || `Erreur ${r.status}`);
       return b.message;

@@ -169,3 +169,13 @@ test("stop trop serré (PAXG du 03/10 : 0,06 %) → « ne pas prendre », rangé
   assert.equal(ph.code, "serre");
   assert.equal(espace(s, ph), "fini");
 });
+
+test("vérification express : bouton sur « Condition remplie », setup abandonné après revérification", async () => {
+  const { phase, phaseHtml, espace } = await import("../setup.js");
+  const s = { status: "TRADE", direction: "LONG", entry_low: 99, entry_high: 100, sl: 97, tp1: 104, tp2: 106, tp3: 109, quote: "USD", score: 70,
+    instrument_key: "futures:PF_TAOUSD", expires_at: new Date(Date.now() + 3600e3).toISOString() };
+  const ab = phase({ ...s, revuSans: new Date().toISOString() }, 99.5);
+  assert.equal(ab.code, "annule");
+  assert.equal(espace(s, ab), "fini");
+  assert.match(phaseHtml({ code: "condition", icone: "✅", titre: "Condition remplie", texte: "x", verif: "futures:PF_TAOUSD" }), /data-verif="futures:PF_TAOUSD"/);
+});

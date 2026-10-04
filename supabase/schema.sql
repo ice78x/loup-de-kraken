@@ -307,6 +307,7 @@ create table if not exists public.scan_requests (
   user_id    uuid not null default auth.uid() references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+alter table public.scan_requests add column if not exists mode text;
 
 -- Réglages du bot modifiables depuis le site (bornes de sécurité incluses)
 insert into public.bot_settings (key, value, label, help, min_value, max_value) values
