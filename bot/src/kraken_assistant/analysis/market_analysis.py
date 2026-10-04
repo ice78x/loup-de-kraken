@@ -37,6 +37,8 @@ class MarketAnalysis:
     bars: Bars | None = None
     htf: HTFContext = field(default_factory=HTFContext)
     notes: list[str] = field(default_factory=list)
+    regime: object | None = None      # analysis.regime.Regime (moteur v2), calculé par le scanner / le backtest
+    context: object | None = None     # analysis.regime.MarketContext (BTC / ETH)
 
     def summary(self) -> dict:
         s = self.structures

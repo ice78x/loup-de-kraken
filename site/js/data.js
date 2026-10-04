@@ -62,11 +62,17 @@ function supabaseBackend() {
     signalStats: () => q(sb.from("signal_stats").select("*")),
     recentOutcomes: (limit = 25) => q(sb.from("signal_outcomes").select("created_at,display,direction,status,outcome,r").order("created_at", { ascending: false }).limit(limit)),
     edges: () => q(sb.from("bot_edges").select("*").order("asset_class")),
+    // Dernier backtest walk-forward du moteur v2 (null si aucun, ou si schema.sql n'a pas été relancé)
+    latestBacktest: async () => {
+      const { data, error } = await sb.from("backtest_runs").select("id,created_at,days,summary,report").order("created_at", { ascending: false }).limit(1);
+      if (error) return null;
+      return data?.[0] || null;
+    },
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),
     settingsLog: () => q(sb.from("bot_settings_log").select("*,profiles:changed_by(pseudo)").order("created_at", { ascending: false }).limit(20)),
-    requestScan: async (mode = "normal", symbol = null) => {
-      const r = await fetch("/api/scan", { method: "POST", headers: { authorization: `Bearer ${await backend.token()}`, "content-type": "application/json" }, body: JSON.stringify({ mode, ...(symbol ? { symbol } : {}) }) });
+    requestScan: async (mode = "normal", symbol = null, extra = {}) => {
+      const r = await fetch("/api/scan", { method: "POST", headers: { authorization: `Bearer ${await backend.token()}`, "content-type": "application/json" }, body: JSON.stringify({ mode, ...(symbol ? { symbol } : {}), ...extra }) });
       const b = await r.json().catch(() => ({ error: `Erreur ${r.status}` }));
       if (!r.ok) throw new Error(b.error || `Erreur ${r.status}`);
       return b.message;

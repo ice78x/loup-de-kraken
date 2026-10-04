@@ -168,10 +168,13 @@ export function demoBackend() {
       { created_at: ago(7), display: "PF_SOLUSD", direction: "LONG", status: "TRADE", outcome: "be", r: 0.27 },
       { created_at: ago(9), display: "PF_XBTUSD", direction: "LONG", status: "WATCH", outcome: "non_entre", r: null }]),
     edges: () => ok([{ asset_class: "crypto", strategy: "cassure_retest", status: "non démontré", oos_trades: 0, period: "DÉMO" }]),
+    // DÉMO : aucun backtest (en vrai : table backtest_runs remplie par GitHub Actions)
+    latestBacktest: () => ok(null),
     settings: () => ok(settings),
     setSetting: (key, value) => { settings.find((s) => s.key === key).value = value; return ok({}); },
     settingsLog: () => ok([{ key: "score_trade", old_value: 55, new_value: 60, created_at: ago(12), profiles: { pseudo: "Nora" } }]),
-    requestScan: (mode) => ok(mode === "cible" ? "DÉMO : en vrai, le bot revérifie cette paire et répond en 1 à 3 minutes."
+    requestScan: (mode) => ok(mode === "backtest" ? "DÉMO : en vrai, le backtest tourne 30 à 90 minutes sur GitHub."
+      : mode === "cible" ? "DÉMO : en vrai, le bot revérifie cette paire et répond en 1 à 3 minutes."
       : "DÉMO : en vrai, le scan est lancé sur GitHub et le résultat arrive en 2 à 4 minutes."),
     cibleScans: () => ok([]),
     trades: ({ userId, status, instrumentKey } = {}) => ok(trades.filter((t) => (!userId || t.user_id === userId) && (!status || t.status === status)

@@ -1,0 +1,55 @@
+# Backtest walk-forward du moteur v2 sur de VRAIES bougies Kraken (perpétuels), comparé à l'ancien moteur.
+# Lancé à la main (onglet Actions → backtest → Run workflow, ou bouton admin du site), et chaque dimanche à 4 h UTC.
+# Résultats : table Supabase backtest_runs (affichée sur le site) + résumé dans le journal de l'exécution.
+# Le scanner relit le dernier résultat : une stratégie sans avantage prouvé ne peut pas donner de 🟢.
+name: backtest
+
+on:
+  schedule:
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "jours d'historique (30 à 365)"
+        default: "120"
+      instruments:
+        description: "nombre de perpétuels crypto (3 à 40, BTC et ETH toujours inclus)"
+        default: "16"
+
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bot/pyproject.toml
+      - run: pip install -e .
+      # Historique profond gardé d'une exécution à l'autre (séparé de celui des scans)
+      - uses: actions/cache@v4
+        with:
+          path: bot/data-backtest
+          key: backtest-history-${{ github.run_id }}
+          restore-keys: backtest-history-
+      - name: Backtest walk-forward AVANT / APRÈS
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          PYTHONUNBUFFERED: "1"
+          DATA_DIR: data-backtest
+          FUTURES_ENABLED: "true"
+          BACKTEST_DAYS: ${{ github.event.inputs.days || '120' }}
+          BACKTEST_INSTRUMENTS: ${{ github.event.inputs.instruments || '16' }}
+          BACKTEST_SLIPPAGE_PCT: "0.03"
+          USER_AGENT: "loup-de-kraken/1.0 (private club bot)"
+        run: python -m kraken_assistant.cloud.run backtest

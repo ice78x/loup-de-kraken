@@ -1,6 +1,7 @@
 // Le bot (ADMIN seulement) : comment il décide, ce que dit l'historique, ses réglages, et comment modifier le code avec Claude.
 // Les membres passent par la boîte à idées (#/idees) ; la base refuse aussi toute modification des réglages par un non-admin.
 import { backend } from "../data.js";
+import { backtestBlock } from "../backtest.js";
 import { STRAT, ago, busy, dt, esc, pct, rr, toast } from "../ui.js";
 
 const PROMPTS = [
@@ -16,7 +17,8 @@ export async function render(main, ctx) {
       <a class="btn principal" href="#/idees" style="margin-top:12px">Proposer une idée</a></div>`;
     return;
   }
-  const [settings, log, edges] = await Promise.all([backend.settings(), backend.settingsLog(), backend.edges()]);
+  const [settings, log, edges, run] = await Promise.all([backend.settings(), backend.settingsLog(), backend.edges(),
+    backend.latestBacktest().catch(() => null)]);
   main.innerHTML = `
     <h1>Le bot</h1>
     <p>Chaque heure, 24 h / 24, le bot analyse les marchés Kraken et publie ici ses trades. Page réservée à l'admin : les membres envoient leurs idées depuis l'onglet Idées, tu les reçois dans Mon compte.</p>
@@ -26,14 +28,20 @@ export async function render(main, ctx) {
         <li><b>Il liste</b> tout ce qui est vraiment disponible sur Kraken pour la France (cryptos, xStocks, matières premières).</li>
         <li><b>Il garde les marchés liquides</b> : assez de volume, écart achat/vente faible.</li>
         <li><b>Il lit les news</b> officielles (Fed, BCE, SEC…) et médias reconnus. Une rumeur ne compte jamais.</li>
-        <li><b>Il analyse les graphiques</b> en 5 min, 15 min, 1 h, 4 h, et l'historique jour/semaine.</li>
-        <li><b>Il cherche 4 configurations</b> : ${Object.entries(STRAT).filter(([k]) => k !== "manuel").map(([, v]) => v.toLowerCase()).join(", ")}.</li>
-        <li><b>Il note chaque setup sur 100</b> (catalyseur, structure, niveau, volume, volatilité, confirmation, rapport gain/risque).</li>
-        <li><b>Il élimine</b> ce qui est trop risqué : stop trop serré, mouvement déjà parti, frais trop lourds, gain trop faible.</li>
-        <li><b>Il publie</b> 🟢 si tout est bon, 🟡 si ça se prépare, 🛑 sinon.</li>
+        <li><b>Il détermine le régime du marché</b> (1 jour, 4 h, 1 h) : tendance haussière, baissière, range, cassure, volatilité extrême, chaotique.
+          Chaotique, incertain ou trop volatil → <b>aucun trade</b>.</li>
+        <li><b>Il regarde BTC et ETH d'abord</b> : un LONG sur une altcoin est bloqué si BTC baisse nettement (et inversement).</li>
+        <li><b>Il choisit la stratégie du régime</b> : repli ou cassure dans le sens de la tendance, rejet seulement en range.</li>
+        <li><b>Il note chaque setup sur 100</b> avec des règles fixes : régime 20 · alignement des tendances 20 · structure 20 · volume 10 · momentum 10 · news 10 · gain/risque 10.
+          90+ = 🔥 A+, 80+ = 🟢, 70+ = 🟡, en dessous rien n'est affiché.</li>
+        <li><b>Il exige une preuve</b> : pas de 🟢 tant que la stratégie n'a pas gagné, dans ce régime, sur des données qu'elle n'avait pas vues (backtest ci-dessous).</li>
+        <li><b>Il élimine</b> le reste : stop trop serré, mouvement déjà parti, frais trop lourds, gain trop faible, série de pertes récente.</li>
+        <li><b>Il publie</b> au plus 2 🟢 par scan, et un seul par sens sur les cryptos (elles bougent ensemble).</li>
       </ol></section>
 
-    <section class="section"><h2>Ce que dit l'historique</h2>
+    ${backtestBlock(run, { admin: true })}
+
+    <section class="section"><h2>Ancien optimiseur</h2>
       <p class="muted">Chaque dimanche, le bot rejoue ses stratégies sur tout l'historique et garde seulement les réglages gagnants sur des périodes qu'il n'a pas vues pendant le réglage.</p>
       ${edges.length ? `<div class="table-wrap"><table><thead><tr><th>Marché</th><th>Stratégie</th><th>Statut</th><th class="d">Trades testés</th><th class="d">Résultat moyen</th><th class="d">Réussite</th></tr></thead>
       <tbody>${edges.map((e) => `<tr><td>${esc(e.asset_class)}</td><td>${esc(STRAT[e.strategy] || e.strategy)}</td>

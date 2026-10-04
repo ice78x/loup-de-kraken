@@ -41,6 +41,16 @@ class Setup:
     exceptional: bool = False
     extension_atr: float = 0.0      # distance (en ATR 15m) entre le niveau clé et le prix, dans le sens du trade
     edge_note: str = ""             # performance historique hors échantillon de la stratégie (optimiseur)
+    # --- moteur v2 ---
+    legacy_score: float = 0.0       # ancien score additif (conservé pour la comparaison AVANT/APRÈS)
+    legacy_status: str = WATCH      # statut que l'ancien moteur aurait donné (score ≥ 60, filtres durs, confirmé)
+    hard_ok: bool = True            # aucun filtre dur (stop, R:R, liquidité, extension…) ne refuse le setup
+    grade: str = ""                 # A+ (≥ 90) · A (≥ 80) · B (≥ 70) · C
+    regime: str = ""
+    regime_label: str = ""
+    btc_context: str = ""           # bloque | contre | neutre | favorable
+    kill: list[str] = field(default_factory=list)   # coupe-circuits v2 (interdisent le 🟢)
+    net_rr: list[float] = field(default_factory=list)
 
     @property
     def sizing_entry(self) -> float:
@@ -215,10 +225,25 @@ def apply_filters(st: Setup, a: MarketAnalysis, s: Settings) -> None:
     st.warnings += a.catalyst.warnings
 
 
-def finalize(st: Setup, a: MarketAnalysis, s: Settings) -> Setup:
+LEGACY_SCORE_TRADE = 60   # seuil 🟢 de l'ancien moteur (jusqu'au 04/10), pour la comparaison AVANT/APRÈS
+
+
+def finalize(st: Setup, a: MarketAnalysis, s: Settings, check_edge: bool = True) -> Setup:
+    from .quality import grade, kill_switch, score_quality
     apply_filters(st, a, s)
     if a.htf.history_days:
         st.reasons.append(a.htf.summary())
+    st.hard_ok = not st.rejections
+    st.legacy_score = st.score
+    st.legacy_status = TRADE if (st.hard_ok and st.confirmed and st.score >= LEGACY_SCORE_TRADE) else WATCH
+    q = score_quality(st, a, s, dict(st.components))
+    rg = q["regime"]
+    st.components, st.score = q["components"], q["score"]
+    st.regime, st.regime_label, st.btc_context, st.net_rr = rg.name, rg.label, q["btc"], q["net_rr"]
+    st.grade = grade(st.score, s)
+    st.kill = kill_switch(st, a, s, q, check_edge=check_edge)
+    st.rejections += st.kill
+    st.reasons.insert(0, f"régime : {rg.label.lower()}" + (f" ({rg.reasons[0]})" if rg.reasons else ""))
     aligned_major = a.catalyst.has_major and a.catalyst.points.get(st.direction, 0) >= 8
     st.exceptional = st.score >= s.score_exceptional and aligned_major
     if st.rejections or not st.confirmed:
@@ -227,4 +252,5 @@ def finalize(st: Setup, a: MarketAnalysis, s: Settings) -> Setup:
         st.status = TRADE
     else:
         st.status = WATCH
+        st.rejections.append(f"score qualité {st.score:.0f}/100 < {s.score_trade} : pas assez de confluence")
     return st

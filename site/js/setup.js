@@ -226,8 +226,10 @@ export function scenario(s, lev, maxLev = 10) {
   return { lev, perte, tp1, tout, liqPct, liqAvant };
 }
 
-/** Score à partir duquel un setup est classé « plus solide » (confiance du bot, 0–100). */
-export const SEUIL_SOLIDE = 75;
+/** Score qualité (moteur v2, /100) à partir duquel un setup est classé « plus solide » = seuil du 🟢. */
+export const SEUIL_SOLIDE = 80;
+/** 🔥 TRADE A+ */
+export const SEUIL_APLUS = 90;
 /** Prix à moins de ce pourcentage de la zone = imminent. */
 export const PROCHE_PCT = 0.5;
 
@@ -247,13 +249,23 @@ export function espace(s, ph) {
 /** Ordre dans un espace : validés avant « à surveiller », puis confiance décroissante. */
 export const ordre = (a, b) => (a.status === "TRADE" ? 0 : 1) - (b.status === "TRADE" ? 0 : 1) || +b.score - +a.score;
 
+const MAXI = { "régime": 20, alignement: 20, structure: 20, volume: 10, momentum: 10, news: 10, "R:R": 10 };
+const REGIMES = { TREND_UP: "tendance haussière", TREND_DOWN: "tendance baissière", RANGE: "range", BREAKOUT_UP: "cassure haussière",
+  BREAKOUT_DOWN: "cassure baissière", HIGH_VOL: "volatilité extrême", CHAOTIC: "marché chaotique", UNCERTAIN: "régime incertain" };
+
 export function confiance(s) {
   const v = Math.max(0, Math.min(100, Math.round(+s.score || 0)));
-  const mot = v >= 85 ? "très forte" : v >= SEUIL_SOLIDE ? "forte" : v >= 65 ? "moyenne" : "faible";
-  return `<div class="confiance" title="Confiance du bot : plus le score est haut, plus il y a de signaux d'accord. Ce n'est jamais une garantie.">
-    <span class="small muted">Confiance du bot</span>
+  const mot = v >= SEUIL_APLUS ? "🔥 A+ exceptionnel" : v >= SEUIL_SOLIDE ? "A · fort" : v >= 70 ? "B · moyen" : "faible";
+  const comp = s.quality?.composantes || null;
+  const regime = s.regime ? REGIMES[s.regime] || s.regime : null;
+  const detail = comp ? `<details class="small"><summary>Détail du score</summary><ul>${Object.entries(MAXI).map(([k, m]) =>
+    `<li>${esc(k === "R:R" ? "Gain / risque" : k[0].toUpperCase() + k.slice(1))} : <b>${Math.round(+comp[k] || 0)}/${m}</b></li>`).join("")}
+    ${s.quality?.contexte_btc && s.quality.contexte_btc !== "neutre" ? `<li>Contexte BTC : <b>${esc(s.quality.contexte_btc)}</b></li>` : ""}</ul>
+    ${(s.quality?.coupe_circuits || []).length ? `<p>Bloqué par : ${s.quality.coupe_circuits.map(esc).join(" · ")}</p>` : ""}</details>` : "";
+  return `<div class="confiance" title="Score qualité du bot : règles fixes (régime, tendances, structure, volume, momentum, news, gain/risque). Ce n'est jamais une garantie.">
+    <span class="small muted">Score qualité${regime ? ` · ${esc(regime)}` : ""}</span>
     <span class="jauge"><i style="width:${v}%"></i></span>
-    <b class="small">${v}/100 · ${mot}</b></div>`;
+    <b class="small">${v}/100 · ${mot}</b>${detail}</div>`;
 }
 
 export function idee(s) {

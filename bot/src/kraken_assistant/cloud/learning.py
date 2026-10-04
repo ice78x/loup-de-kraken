@@ -113,7 +113,10 @@ def features(st, a, mode: str = "normal") -> dict:
     """Contexte du setup au moment du signal (pour comprendre plus tard ce qui marche) : rien d'inventé, que l'analyse du bot."""
     f: dict = {"mode": mode, "score": _r(st.score, 1), "composantes": dict(st.components or {}), "confirme": bool(st.confirmed),
                "exceptionnel": bool(st.exceptional), "extension_atr15": _r(st.extension_atr, 2), "rr": st.r_multiples(),
-               "nb_alertes": len(st.warnings or []), "refus": list(st.rejections or [])[:5]}
+               "nb_alertes": len(st.warnings or []), "refus": list(st.rejections or [])[:5],
+               "moteur": "v2", "regime": getattr(st, "regime", "") or None, "note": getattr(st, "grade", "") or None,
+               "contexte_btc": getattr(st, "btc_context", "") or None, "coupe_circuits": list(getattr(st, "kill", []) or [])[:5],
+               "rr_net": list(getattr(st, "net_rr", []) or []), "score_ancien": _r(getattr(st, "legacy_score", None), 1)}
     if a is not None:
         px = float(a.price) if a.price else None
         f.update({
@@ -221,3 +224,26 @@ def resolve_signals(sb, app, days: int = 4, max_signals: int = 300) -> int:
         sb.upsert("signal_outcomes", rows, "signal_id")
     log.info("apprentissage : %d signal(aux) terminé(s) enregistré(s) sur %d à suivre", len(rows), len(todo))
     return len(rows)
+
+
+def degraded_strategies(rows: list[dict], window: int = 10, streak: int = 5, floor_r: float = -3.0) -> dict[str, str]:
+    """Détection de dégradation (moteur v2, signaux 🟢 réellement entrés) : par stratégie, sur les `window` derniers
+    résultats, `streak` pertes d'affilée ou un total ≤ `floor_r` → stratégie suspendue (plus de 🟢) jusqu'à analyse."""
+    by: dict[str, list[tuple[str, float]]] = {}
+    for x in rows or []:
+        if x.get("r") is None or x.get("status") != "TRADE":
+            continue
+        by.setdefault(x.get("strategy") or "?", []).append((str(x.get("created_at") or ""), float(x["r"])))
+    out = {}
+    for strat, items in by.items():
+        rs = [r for _, r in sorted(items)][-window:]
+        tail = 0
+        for r in reversed(rs):
+            if r > 0:
+                break
+            tail += 1
+        if tail >= streak:
+            out[strat] = f"{tail} pertes d'affilée"
+        elif len(rs) >= window // 2 and sum(rs) <= floor_r:
+            out[strat] = f"{sum(rs):+.1f}R sur les {len(rs)} derniers trades"
+    return out

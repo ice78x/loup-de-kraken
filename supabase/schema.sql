@@ -163,6 +163,10 @@ create table if not exists public.signals (
   expires_at     timestamptz
 );
 create index if not exists signals_created_idx on public.signals (created_at desc);
+-- Moteur v2 : note (A+/A/B), régime de marché, détail du score qualité /100 et coupe-circuits
+alter table public.signals add column if not exists grade text;
+alter table public.signals add column if not exists regime text;
+alter table public.signals add column if not exists quality jsonb;
 
 create table if not exists public.instruments (
   key            text primary key,
@@ -311,8 +315,9 @@ alter table public.scan_requests add column if not exists mode text;
 
 -- Réglages du bot modifiables depuis le site (bornes de sécurité incluses)
 insert into public.bot_settings (key, value, label, help, min_value, max_value) values
- ('score_trade', '60', 'Score minimal pour un 🟢', 'Plus haut = moins de trades mais plus sélectifs.', 45, 85),
- ('score_watch', '40', 'Score minimal pour un 🟡', 'En dessous, le setup n''est même pas affiché.', 25, 70),
+ ('score_trade', '80', 'Score qualité minimal pour un 🟢 (/100)', 'Moteur v2 : 90+ = 🔥 A+, 80–89 = 🟢. Plus haut = moins de trades mais plus sélectifs.', 60, 95),
+ ('score_watch', '70', 'Score qualité minimal pour un 🟡 (/100)', 'En dessous, le setup n''est même pas affiché.', 40, 90),
+ ('require_proven_edge', 'true', 'Exiger une preuve statistique', 'Pas de 🟢 tant que la stratégie n''a pas une espérance positive hors échantillon dans le dernier backtest.', null, null),
  ('min_rr_tp2', '1.5', 'R:R minimal au TP2', 'Gain potentiel minimum au TP2, en multiples du risque.', 1, 4),
  ('min_net_rr_tp2', '1.2', 'R:R net de frais minimal au TP2', 'Même chose après les frais Kraken.', 0.8, 3),
  ('max_spread_pct', '0.35', 'Spread maximal (%)', 'Écart achat/vente maximum accepté.', 0.05, 1),
@@ -334,6 +339,16 @@ do $$ begin
     insert into public._migrations (name) values ('stop_respirable_1_2');
   end if;
 end $$;
+-- Moteur v2 (04/10) : score qualité /100 → seuils 80 (🟢) / 70 (🟡). Les anciennes valeurs 60/40 ne veulent plus rien dire.
+do $$ begin
+  if not exists (select 1 from public._migrations where name = 'moteur_v2_scores') then
+    update public.bot_settings set value = '80'::jsonb, min_value = 60, max_value = 95,
+      label = 'Score qualité minimal pour un 🟢 (/100)' where key = 'score_trade' and (value)::text::numeric < 80;
+    update public.bot_settings set value = '70'::jsonb, min_value = 40, max_value = 90,
+      label = 'Score qualité minimal pour un 🟡 (/100)' where key = 'score_watch' and (value)::text::numeric < 70;
+    insert into public._migrations (name) values ('moteur_v2_scores');
+  end if;
+end $$;
 -- Stop minimal 0,5 % du prix : sur les résultats réels (04/10), les stops plus serrés perdaient −0,47R en moyenne.
 do $$ begin
   if not exists (select 1 from public._migrations where name = 'stop_min_0_5_pct') then
@@ -341,6 +356,17 @@ do $$ begin
     insert into public._migrations (name) values ('stop_min_0_5_pct');
   end if;
 end $$;
+
+-- Backtests walk-forward du moteur v2 (lancés par GitHub Actions, workflow « backtest ») : résultats AVANT/APRÈS
+-- et combinaisons stratégie × régime prouvées. Le scanner relit le dernier : sans preuve, pas de 🟢.
+create table if not exists public.backtest_runs (
+  id         bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  days       int,
+  summary    text,
+  report     jsonb
+);
+create index if not exists backtest_runs_created_idx on public.backtest_runs (created_at desc);
 
 -- Résultats RÉELS des signaux du bot (rejoués sur les vraies bougies Kraken) : la mémoire du bot pour s'améliorer.
 -- Gardés sans limite (les signaux eux-mêmes sont effacés après 60 jours).
@@ -407,6 +433,7 @@ alter table public.ideas           enable row level security;
 alter table public.idea_votes      enable row level security;
 alter table public.scan_requests   enable row level security;
 alter table public.signal_outcomes enable row level security;
+alter table public.backtest_runs   enable row level security;
 
 do $$
 declare r record;
@@ -433,6 +460,7 @@ create policy "lecture signaux" on public.signals for select using (public.is_ap
 create policy "lecture instruments" on public.instruments for select using (public.is_approved());
 create policy "lecture edges" on public.bot_edges for select using (public.is_approved());
 create policy "lecture résultats signaux" on public.signal_outcomes for select using (public.is_approved());
+create policy "lecture backtests" on public.backtest_runs for select using (public.is_approved());
 
 -- Trades : tout le club voit l'historique, chacun ne modifie que les siens
 create policy "lecture trades du club" on public.trades for select using (public.is_approved());

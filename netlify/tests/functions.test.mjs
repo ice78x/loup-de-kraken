@@ -66,3 +66,27 @@ test("bouton SCAN : refuse sans connexion, limite à 1 toutes les 10 min, décle
   last = [{ created_at: new Date(Date.now() - 60000).toISOString(), mode: "cible" }];
   assert.equal((await scan(cible({ mode: "cible", symbol: "futures:PF_TAOUSD" }))).status, 429);
 });
+
+test("bouton BACKTEST : admin seulement, 1 par heure, workflow backtest.yml avec bornes", async () => {
+  Object.assign(process.env, { SUPABASE_URL: "https://sb", SUPABASE_ANON_KEY: "anon", GH_TOKEN: "gh", GH_REPO: "moi/loup" });
+  let admin = false, last = [], sent = null;
+  globalThis.fetch = async (url, opt = {}) => {
+    const u = String(url);
+    calls.push([u, opt.method || "GET"]);
+    if (u.endsWith("/auth/v1/user")) return reply({ id: "u1" });
+    if (u.includes("/profiles")) return reply([{ approved: true, is_admin: admin }]);
+    if (u.includes("/scan_requests") && (opt.method || "GET") === "GET") return reply(last);
+    if (u.includes("api.github.com")) { sent = [u, JSON.parse(opt.body)]; return new Response(null, { status: 204 }); }
+    return new Response(null, { status: 201 });
+  };
+  const bt = (b) => new Request("https://x/api/scan", { method: "POST", headers: { authorization: "Bearer tok" }, body: JSON.stringify(b) });
+  assert.equal((await scan(bt({ mode: "backtest" }))).status, 403);
+  admin = true;
+  last = [{ created_at: new Date(Date.now() - 3 * 60000).toISOString(), mode: "normal" }];   // un scan récent ne bloque pas
+  const r = await scan(bt({ mode: "backtest", days: 9999, instruments: 2 }));
+  assert.equal(r.status, 200);
+  assert.match(sent[0], /workflows\/backtest\.yml\/dispatches/);
+  assert.deepEqual(sent[1].inputs, { days: "365", instruments: "3" });
+  last = [{ created_at: new Date(Date.now() - 20 * 60000).toISOString(), mode: "backtest" }];
+  assert.equal((await scan(bt({ mode: "backtest" }))).status, 429);
+});

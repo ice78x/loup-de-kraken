@@ -23,7 +23,16 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   (permanente ; chaque signal y est écrit dès sa publication, `outcome='en_cours'` + `features` = contexte complet) → vue `signal_stats`. Relue à chaque scan (`live_edges`, 🟢 et 🟡 additionnés) : stratégie×classe ≥ 15 trades et R moyen < −0,15 → plus de 🟢.
   `resolve_signals` lit les signaux par pages de 1000 (PostgREST) et ne rejoue que les non terminés.
   Affiché dans « Mes trades » (🧠 Ce que le bot apprend).
-- `.github/workflows/` : `scan.yml` (horaire), `optimize.yml` (dimanche), `tests.yml` (à chaque push).
+- **Moteur v2 (04/10)** : `analysis/regime.py` (régime TREND/RANGE/BREAKOUT/HIGH_VOL/CHAOTIC/UNCERTAIN + contexte BTC/ETH `MarketContext`),
+  `strategies/quality.py` (score qualité /100 à règles fixes, coupe-circuits `kill_switch`, preuve statistique), appelés par `finalize`.
+  Seuils : ≥ 90 🔥 A+, ≥ 80 🟢, ≥ 70 🟡, sinon non publié. Stratégie autorisée seulement dans son régime (`ALLOWED`).
+  **Pas de 🟢 sans preuve** (`require_proven_edge`) : combinaison stratégie × famille de régime prouvée dans le dernier backtest
+  (`backtest_runs.report.edges`, lu par `v2_inputs` dans `cloud/run.py`). Série de pertes réelle (v2) → stratégie suspendue (`degraded_strategies`).
+  Au plus 2 🟢 par scan, 1 par sens sur les cryptos. L'ancien score reste calculé (`legacy_score`) pour la comparaison AVANT/APRÈS.
+- **Backtest walk-forward** : `backtest/walkforward.py` (AVANT ancien moteur / APRÈS v2, edges appris seulement sur le passé, frais + glissement),
+  `backtest/runner.py` (univers liquide, backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`
+  (manuel ou bouton admin du site via `netlify/functions/scan.mjs` mode `backtest`, + dimanche). Résultats affichés par `site/js/backtest.js`.
+- `.github/workflows/` : `scan.yml` (horaire), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
 
 ## Règles NON négociables
 1. **Ne jamais inventer** un prix, une news, un volume, une disponibilité Kraken, une position ou un résultat. Donnée absente → le dire

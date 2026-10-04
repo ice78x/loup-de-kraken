@@ -20,6 +20,7 @@ from ..analysis.catalysts import catalyst_for
 from ..analysis.correlation import correlation
 from ..analysis.liquidity import check_book, liquidity_report
 from ..analysis.market_analysis import MarketAnalysis, analyze_market
+from ..analysis.regime import MarketContext, regime_from_analysis
 from ..api.errors import DataUnavailable
 from ..app import App
 from ..database.db import utcnow
@@ -155,6 +156,10 @@ def select_candidates(app: App, insts: list[Instrument], tickers: dict[str, Tick
     for _, inst in pool:
         if inst.key in position_keys or inst.base in news_bases or (focus and (inst.key in focus or inst.base in focus)):
             chosen[inst.key] = inst
+    # BTC et ETH sont toujours analysés : leur régime sert de contexte à toutes les altcoins (moteur v2)
+    for _, inst in pool:
+        if inst.asset_class == "crypto" and inst.base in ("BTC", "XBT", "ETH"):
+            chosen[inst.key] = inst
     all_by_key = {i.key: i for i in insts}
     for k in position_keys:
         if k in all_by_key:
@@ -256,13 +261,23 @@ def _scan(app: App, mode: str, focus: set[str] | None) -> ScanReport:
             rep.data_issues.append(f"{inst.display}: analyse impossible ({type(e).__name__})")
             continue
         analyses[inst.key] = a
+    # Moteur v2 : régime de chaque marché + contexte BTC/ETH, AVANT de chercher des setups
+    ctx = market_context(analyses)
+    for a in analyses.values():
+        try:
+            a.regime = regime_from_analysis(a)
+        except (ValueError, IndexError, KeyError):
+            a.regime = None
+        a.context = ctx
         for name, fn in STRATEGIES.items():
             if name in s.disabled_strategies:
                 continue
             try:
                 setups += fn(a, s)
             except (ValueError, IndexError, KeyError, ZeroDivisionError) as e:
-                log.warning("stratégie %s échouée sur %s: %s", name, inst.display, e)
+                log.warning("stratégie %s échouée sur %s: %s", name, a.inst.display, e)
+    if ctx.btc is not None:
+        log.info("contexte BTC=%s ETH=%s", ctx.btc.name, ctx.eth.name if ctx.eth else "?")
     rep.counts = {**stats, "analysés": len(analyses), "setups": len(setups)}
     rep.analyses, rep.fx = analyses, fx
     if s.use_optimized_params:
@@ -300,6 +315,12 @@ def _scan(app: App, mode: str, focus: set[str] | None) -> ScanReport:
     for st in trades_ts:
         if len(accepted) >= s.max_signals_per_scan:
             st.status, st.trigger = WATCH, st.trigger or "limite de signaux par scan atteinte"
+            st.rejections.append("des setups mieux classés sont déjà proposés (1 excellent trade plutôt que 10 moyens)")
+            continue
+        if st.asset_class == "crypto" and sum(1 for x in accepted if x.setup.asset_class == "crypto"
+                                              and x.setup.direction == st.direction) >= s.max_trades_per_direction_crypto:
+            st.status = WATCH
+            st.rejections.append(f"un setup crypto {st.direction} mieux classé est déjà proposé (cryptos corrélées = un seul risque)")
             continue
         if st.inst_key in seen_inst:
             st.status = WATCH
@@ -432,6 +453,23 @@ def _scan(app: App, mode: str, focus: set[str] | None) -> ScanReport:
     return rep
 
 
+def market_context(analyses: dict) -> MarketContext:
+    """Régimes de BTC et d'ETH (perpétuels de préférence), contexte de toutes les altcoins."""
+    def find(*bases):
+        cands = [a for a in analyses.values() if a.inst.asset_class == "crypto" and a.inst.base in bases]
+        cands.sort(key=lambda a: a.inst.venue != "futures")
+        return cands[0] if cands else None
+    out = MarketContext()
+    for attr, bases in (("btc", ("BTC", "XBT")), ("eth", ("ETH",))):
+        a = find(*bases)
+        if a is not None:
+            try:
+                setattr(out, attr, regime_from_analysis(a))
+            except (ValueError, IndexError, KeyError):
+                pass
+    return out
+
+
 def apply_edges(setups: list[Setup], edges: dict, s) -> None:
     """Applique les réglages issus de l'historique (optimiseur walk-forward) à chaque setup."""
     for st in setups:
@@ -442,19 +480,20 @@ def apply_edges(setups: list[Setup], edges: dict, s) -> None:
         st.edge_note = e.note()
         if e.status == DISABLED:
             st.rejections.append(f"stratégie {st.strategy} désactivée sur {st.asset_class} "
-                                 f"(historique hors échantillon négatif : {e.oos_expectancy:+.2f}R)")
+                                 f"(historique hors échantillon négatif : {(e.oos_expectancy or 0):+.2f}R)")
             st.status = WATCH
         elif e.status == ADOPTED and st.confirmed and not st.rejections:
+            # Moteur v2 : l'ancien optimiseur peut seulement RETIRER un 🟢, jamais en donner un.
             rs = st.r_multiples()
             if len(rs) > 1 and rs[1] < e.min_rr_tp2:
                 st.rejections.append(f"R:R TP2 {rs[1]:.1f} < minimum optimisé {e.min_rr_tp2:.1f}")
                 st.status = WATCH
-            else:
-                st.status = TRADE if st.score >= e.score_threshold else WATCH
+            elif (st.legacy_score or st.score) < e.score_threshold:
+                st.status = WATCH
 
 
 REFUS_DEFINITIFS = ("impossible", "R:R", "SL trop serré", "désactivée", "perd en vrai", "trop étendu", "volatilité extrême",
-                    "liquidité", "spread", "profondeur", "delisting", "peu actif")
+                    "liquidité", "spread", "profondeur", "delisting", "peu actif", "perd en backtest", "série de pertes")
 
 
 def apply_live_edges(setups: list[Setup], s) -> None:

@@ -73,10 +73,21 @@ class Settings(BaseSettings):
     live_block_avg_r: float = -0.15   # R moyen réel en dessous duquel la combinaison ne donne plus de 🟢
     max_extension_atr15: float = 2.5
     max_fee_share_of_risk: float = 0.35
-    score_trade: int = 60
-    score_watch: int = 40
-    score_exceptional: int = 85
-    max_signals_per_scan: int = 3
+    # --- Moteur v2 (04/10) : score qualité /100 calculé par règles fixes (strategies/quality.py) ---
+    # ≥ 90 : 🔥 TRADE A+ · 80–89 : 🟢 · 70–79 : 🟡 surveiller · < 70 : rien n'est publié.
+    score_trade: int = 80
+    score_watch: int = 70
+    score_exceptional: int = 90
+    max_signals_per_scan: int = 2
+    max_trades_per_direction_crypto: int = 1   # cryptos très corrélées : 1 seul 🟢 LONG et 1 seul 🟢 SHORT par scan
+    # Pas de 🟢 sans preuve : la combinaison stratégie × régime doit avoir une espérance positive HORS ÉCHANTILLON
+    # dans le dernier backtest walk-forward (table backtest_runs), sur assez de trades.
+    require_proven_edge: bool = True
+    edge_min_trades: int = 20
+    edge_min_pf: float = 1.1
+    v2_edges: dict = {}                       # "stratégie|famille de régime" -> stats (rempli par le cloud)
+    degraded_strategies: list[str] = Field(default_factory=list)  # série de pertes récente (rempli par le cloud)
+    min_net_rr_tp2_v2: float = 1.5            # R:R net de frais minimal au TP2 pour un 🟢 v2
     disabled_strategies: list[str] = Field(default_factory=list)
     quote_currencies: list[str] = Field(default_factory=list)  # vide = config/classification.toml
 

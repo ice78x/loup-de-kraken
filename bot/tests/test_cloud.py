@@ -74,7 +74,7 @@ def test_overrides_bornes_et_types():
         {"key": "score_trade", "value": 99}, {"key": "min_rr_tp2", "value": "2.5"},
         {"key": "disabled_strategies", "value": ["news_momentum"]}, {"key": "live_trading", "value": True},
         {"key": "universe_max_crypto", "value": "abc"}])
-    assert o["score_trade"] == 85                       # borné
+    assert o["score_trade"] == 95                       # borné
     assert o["min_rr_tp2"] == 2.5
     assert o["disabled_strategies"] == ["news_momentum"]
     assert "live_trading" not in o                      # jamais modifiable depuis le site

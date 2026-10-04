@@ -4,6 +4,7 @@ import { ohlc, prices } from "../market.js";
 import { rattraper } from "../suivi.js";
 import { pnlBreakdown } from "../sizing.js";
 import { soldeBloc, soldeLive } from "../solde.js";
+import { backtestBlock } from "../backtest.js";
 import { STRAT, cls, dt, esc, eur, pct, pq, px, rr, toast } from "../ui.js";
 
 export function stats(list) {
@@ -116,10 +117,15 @@ export async function render(main, ctx) {
       <div id="open" class="grille">${open.length ? "" : '<div class="vide"><strong>Aucun trade en cours</strong>Prends un signal 🟢 depuis l\'accueil ou crée un trade manuel.</div>'}</div>
       <p class="small muted" id="px-note"></p></section>
     <section class="section"><h2>Historique</h2>${historyTable(done)}</section>
+    <div id="backtest"></div>
     <div id="apprend"></div>`;
   Promise.all([backend.signalStats().catch(() => null), backend.recentOutcomes(25).catch(() => [])]).then(([rows, rec]) => {
     const el = main.querySelector("#apprend");
     if (el && rows) el.innerHTML = apprentissageBlock(rows, rec);
+  });
+  backend.latestBacktest().catch(() => null).then((run) => {
+    const el = main.querySelector("#backtest");
+    if (el) el.innerHTML = backtestBlock(run, { admin: !!ctx.me.is_admin });
   });
   ctx.onLeave(soldeLive(main, ctx.me));
   if (!open.length) return;

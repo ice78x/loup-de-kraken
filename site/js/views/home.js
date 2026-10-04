@@ -9,8 +9,8 @@ import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast 
 
 const VERDICT = {
   TRADE: (n) => [`${n} trade${n > 1 ? "s" : ""} validé${n > 1 ? "s" : ""}`, "Le bot a trouvé une occasion propre. Lis le ticket avant d'entrer."],
-  WATCH: () => ["Pas encore d'entrée", "Des setups se forment. Le bot attend leur confirmation."],
-  NONE: () => ["Aucun trade, on attend", "Rien d'assez propre pour l'instant. Attendre est une décision."],
+  WATCH: () => ["NO TRADE pour l'instant", "Des setups se forment, mais aucun n'a encore assez de confluence ou de preuve statistique pour un 🟢."],
+  NONE: () => ["NO TRADE", "Aucun setup suffisamment robuste actuellement. Mieux vaut rater un trade que prendre un mauvais trade."],
   DATA: () => ["Données insuffisantes", "Kraken n'a pas répondu correctement. Aucun trade n'est proposé sans données fiables."],
 };
 
@@ -24,11 +24,11 @@ export function ticket(s, me, { href = true } = {}) {
     <div>
       <div class="ligne entre">
         <span class="sens">${s.direction === "LONG" ? "LONG ↑" : "SHORT ↓"}</span>
-        ${s.status === "TRADE" ? (expired ? '<span class="pastille">expiré</span>' : '<span class="pastille long">🟢 validé</span>')
+        ${s.status === "TRADE" ? (expired ? '<span class="pastille">expiré</span>' : s.grade === "A+" ? '<span class="pastille long">🔥 TRADE A+</span>' : '<span class="pastille long">🟢 validé</span>')
           : '<span class="pastille ambre">🟡 à surveiller</span>'}
       </div>
       <div class="actif">${esc(s.display)}</div>
-      <div class="muted small">${esc(STRAT[s.strategy] || s.strategy)} · score ${Math.round(s.score)} · ${ago(s.created_at)}</div>
+      <div class="muted small">${esc(STRAT[s.strategy] || s.strategy)} · qualité ${Math.round(s.score)}/100${s.grade ? ` (${esc(s.grade)})` : ""} · ${ago(s.created_at)}</div>
       <dl>
         <dt>Entrée</dt><dd class="num">${px(s.entry_low)} – ${pq(s.entry_high, s.quote)}</dd>
         <dt>Stop (SL)</dt><dd class="num">${pq(s.sl, s.quote)}</dd>
@@ -92,7 +92,7 @@ export async function render(main, ctx) {
   const budget = riskBudget(me, mine);
   const open = mine.filter((t) => t.status === "ouvert");
   const [titre, sous] = scan ? VERDICT[scan.verdict]?.(trades.length) || VERDICT.NONE() : ["Le bot n'a pas encore scanné", "Le premier scan automatique arrive vers " + nextScan() + ". Tu peux aussi le lancer maintenant."];
-  const icon = scan?.verdict === "TRADE" ? "🟢" : scan?.verdict === "WATCH" ? "🟡" : "🛑";
+  const icon = scan?.verdict === "TRADE" ? "🟢" : ["WATCH", "NONE"].includes(scan?.verdict) ? "🟡" : "🛑";
 
   main.innerHTML = `
     ${aValider || pseudos ? `<a class="alerte lien-alerte" href="#/compte">👤 À valider :
@@ -133,14 +133,14 @@ export async function render(main, ctx) {
     </section>
     <section class="section espace" id="esp-solide">
       <h2>💪 Les plus solides</h2>
-      <p class="muted">Confiance du bot de ${SEUIL_SOLIDE}/100 ou plus : beaucoup de signaux vont dans le même sens.
+      <p class="muted">Score qualité de ${SEUIL_SOLIDE}/100 ou plus : régime, tendances, structure, volume et gain/risque vont dans le même sens.
         Ça reste un pari : c'est le stop qui te protège.</p>
       <div class="grille setups" data-esp="solide"></div>
       <p class="vide-espace small muted" data-vide="solide">Aucun setup à forte confiance en attente.</p>
     </section>
     <section class="section espace" id="esp-fragile">
       <h2>Moins solides</h2>
-      <p class="muted">Moins de signaux d'accord (confiance sous ${SEUIL_SOLIDE}/100). Utile pour apprendre ; si tu entres, sois plus prudent.</p>
+      <p class="muted">Score qualité sous ${SEUIL_SOLIDE}/100 : pas assez de confluence pour un 🟢. À surveiller seulement.</p>
       <div class="grille setups" data-esp="fragile"></div>
       <p class="vide-espace small muted" data-vide="fragile">Aucun.</p>
     </section>

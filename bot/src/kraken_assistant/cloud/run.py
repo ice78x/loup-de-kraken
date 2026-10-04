@@ -29,14 +29,14 @@ from ..scanner.formatter import format_report
 from ..scanner.scan import scan
 from ..news.translate import Translator, explain
 from .supabase_rest import Supabase, SupabaseError
-from .learning import live_edges, pending_rows, resolve_signals
+from .learning import degraded_strategies, live_edges, pending_rows, resolve_signals
 from .tracker import advance_trade
 
 log = logging.getLogger("cloud")
 
 # Réglages modifiables depuis le site → (type, min, max). Les bornes sont revérifiées ici (défense en profondeur).
 EDITABLE = {
-    "score_trade": (int, 45, 85), "score_watch": (int, 25, 70), "min_rr_tp2": (float, 1.0, 4.0),
+    "score_trade": (int, 60, 95), "score_watch": (int, 40, 90), "require_proven_edge": (bool, None, None), "min_rr_tp2": (float, 1.0, 4.0),
     "min_net_rr_tp2": (float, 0.8, 3.0), "max_spread_pct": (float, 0.05, 1.0), "min_sl_atr15": (float, 0.3, 2.0), "min_sl_pct": (float, 0.1, 1.5),
     "max_extension_atr15": (float, 1.0, 5.0), "universe_max_crypto": (int, 5, 40),
     "universe_max_xstocks": (int, 0, 20), "universe_max_commodities": (int, 0, 15),
@@ -82,7 +82,31 @@ def build(sb: Supabase | None) -> App:
             upd["live_edges"] = live_edges(sb.select("signal_stats"))
         except SupabaseError as e:
             log.warning("statistiques réelles des signaux indisponibles (lance supabase/schema.sql) : %s", e)
+        upd.update(v2_inputs(sb))
     return App.build(base.model_copy(update=upd))
+
+
+def v2_inputs(sb: Supabase) -> dict:
+    """Moteur v2 : combinaisons prouvées du dernier backtest walk-forward + stratégies en série de pertes (réel)."""
+    out: dict = {}
+    try:
+        runs = sb.select("backtest_runs", {"select": "id,created_at,report", "order": "created_at.desc", "limit": "1"})
+        edges = ((runs[0].get("report") or {}).get("edges") or {}) if runs else {}
+        out["v2_edges"] = {k: v for k, v in edges.items() if isinstance(v, dict)}
+        log.info("moteur v2 : %d combinaison(s) testée(s), %d prouvée(s)", len(edges),
+                 sum(1 for v in edges.values() if isinstance(v, dict) and v.get("prouve")))
+    except SupabaseError as e:
+        log.warning("résultats de backtest illisibles (lance supabase/schema.sql) : %s — aucun 🟢 sans preuve", e)
+    try:
+        rows = sb.select("signal_outcomes", {"select": "strategy,status,r,created_at", "features->>moteur": "eq.v2",
+                                             "r": "not.is.null", "order": "created_at.desc", "limit": "400"})
+        bad = degraded_strategies(rows)
+        out["degraded_strategies"] = sorted(bad)
+        for k, why in bad.items():
+            log.warning("stratégie %s suspendue : %s", k, why)
+    except SupabaseError as e:
+        log.warning("dégradation non vérifiée : %s", e)
+    return out
 
 
 def _candles(a, n: int = 96) -> list:
@@ -127,7 +151,14 @@ def _row(st, inst, a, rep, scan_id, status, exp) -> dict:
         "invalidation": st.invalidation_text, "reasons": st.reasons, "trigger_text": st.trigger,
         "edge_note": st.edge_note, "eur_per_quote": rep.fx.get(inst.quote), "catalyst": a.catalyst.label() if a else None,
         "candles": _candles(a) if a else [], "expires_at": exp,
+        # moteur v2
+        "grade": st.grade or None, "regime": st.regime or None,
+        "quality": {"composantes": st.components, "regime": st.regime_label, "contexte_btc": st.btc_context,
+                    "coupe_circuits": st.kill[:5], "rr_net": st.net_rr, "score_ancien": st.legacy_score},
     }
+
+
+V2_COLUMNS = ("grade", "regime", "quality")
 
 
 def push_scan(sb: Supabase, rep, tr=None) -> int:
@@ -139,7 +170,14 @@ def push_scan(sb: Supabase, rep, tr=None) -> int:
         "data_issues": rep.data_issues[:30], "duration_s": rep.duration_s})[0]
     rows = signal_rows(rep, row["id"], tr)
     if rows:
-        inserted = sb.insert("signals", rows, returning=True)
+        try:
+            inserted = sb.insert("signals", rows, returning=True)
+        except SupabaseError as e:
+            if not any(c in str(e) for c in V2_COLUMNS):
+                raise
+            # schéma pas encore mis à jour : on publie quand même, sans les colonnes du moteur v2
+            log.warning("colonnes v2 absentes de « signals » (relance supabase/schema.sql) : %s", e)
+            inserted = sb.insert("signals", [{k: v for k, v in r.items() if k not in V2_COLUMNS} for r in rows], returning=True)
         # Mémoire du bot : chaque signal publié est enregistré tout de suite (« en cours »), avec son contexte complet ;
         # le résultat réel est rempli plus tard par l'apprentissage. Jamais bloquant pour le scan.
         try:
@@ -303,6 +341,17 @@ def _main(cmd: str) -> int:
     elif cmd == "track":
         track_trades(sb, app)
         learn(sb, app)
+    elif cmd == "backtest":
+        from ..backtest.runner import run_v2, summary_text
+        days = int(os.environ.get("BACKTEST_DAYS") or 120)
+        n = int(os.environ.get("BACKTEST_INSTRUMENTS") or 16)
+        rep = run_v2(app, days=min(max(days, 30), 365), max_instruments=min(max(n, 3), 40))
+        text = summary_text(rep)
+        print(text, flush=True)
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+                f.write("```\n" + text + "\n```\n")
+        sb.insert("backtest_runs", {"days": days, "summary": text, "report": json.loads(json.dumps(rep, default=str))})
     elif cmd == "optimize":
         print(execute(app, "OPTIMISER"))
         rows = [{"asset_class": e.asset_class, "strategy": e.strategy, "status": e.status,
