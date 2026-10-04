@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def settings(tmp_path) -> Settings:
     return Settings(_env_file=None, data_dir=tmp_path / "data", log_dir=tmp_path / "logs",
                     config_dir=ROOT / "config", scheduler_enabled=False, capital_eur=90.0,
-                    quote_currencies=["EUR", "USD"], perps_only=False)  # fixtures spot ; le mode perps est testé à part
+                    quote_currencies=["EUR", "USD"], perps_only=False,  # fixtures spot ; le mode perps est testé à part
+                    xstocks_us_hours_only=False)  # tests indépendants de l'heure
 
 
 def make_df(prices: list[tuple[float, float, float, float]], start: str = "2026-01-05 00:00", freq: str = "15min",

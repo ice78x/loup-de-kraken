@@ -26,7 +26,7 @@ export function searchInstruments(insts, query, limit = 12) {
 }
 
 // Liste de départ (champ vide) : les actifs les plus suivis d'abord, un seul marché par actif (spot avant futures si les deux existent).
-const POPULAIRES = ["BTC", "ETH", "SOL", "XRP", "LINK", "ADA", "DOGE", "AVAX", "DOT", "LTC", "PAXG", "TSLAX", "NVDAX", "AAPLX", "SPYX"];
+const POPULAIRES = ["BTC", "ETH", "SOL", "XRP", "LINK", "ADA", "DOGE", "AVAX", "DOT", "LTC", "PAXG", "NVDA", "TSLA", "SPY", "QQQ", "AAPL", "TSLAX", "NVDAX", "AAPLX", "SPYX"];
 function popular(insts, limit) {
   const rank = (i) => {
     const p = POPULAIRES.indexOf(norm(i.base));

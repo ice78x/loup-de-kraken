@@ -23,7 +23,7 @@ from ..analysis.market_analysis import MarketAnalysis, analyze_market
 from ..api.errors import DataUnavailable
 from ..app import App
 from ..database.db import utcnow
-from ..market.instruments import tradable_universe
+from ..market.instruments import us_market_open, tradable_universe
 from ..market.models import Instrument, Ticker
 from ..market.prices import eur_per_quote
 from ..news.engine import NewsItem
@@ -111,6 +111,9 @@ def select_candidates(app: App, insts: list[Instrument], tickers: dict[str, Tick
         return chosen, {"tradables": len(insts), "candidats": len(chosen)}
     if s.perps_only:  # le club ne trade que les perpétuels : on n'analyse que les contrats PF_…
         insts = [i for i in insts if i.venue == "futures"]
+    # Actions (xStocks) : seulement quand la bourse américaine est ouverte — sinon le prix est plat et trompeur.
+    if s.xstocks_us_hours_only and not us_market_open():
+        insts = [i for i in insts if i.asset_class != "xstock"]
     fut_verified = s.perps_only or any(i.venue == "futures" and i.account_access == "vérifié" for i in insts)
     stats = {"tradables": len(insts), "avec_ticker": 0, "liquides": 0}
     best: dict[tuple[str, str], tuple[float, Instrument, float]] = {}

@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     # Stop minimum = 1,2 × la volatilité moyenne d'une bougie 15 min (ATR). Plus serré, une simple mèche le touche
     # (ex. WIF du 02/10 : stop à 0,5 ATR → sorti par le bruit). Le trader regarde toutes les 10-30 min : il faut de l'air.
     min_sl_atr15: float = 1.2
+    xstocks_us_hours_only: bool = True   # actions analysées seulement bourse US ouverte (lun–ven 15h30–22h Paris)
     min_sl_pct: float = 0.35          # stop jamais plus près que 0,35 % du prix (marchés calmes : frais + bruit)
     liq_lookback_15m: int = 16        # stop placé au-delà du plus haut/bas des 4 dernières heures s'il est proche
     # Apprentissage sur les vrais résultats des signaux (table signal_outcomes, vue signal_stats)

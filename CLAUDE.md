@@ -37,6 +37,8 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
    s'il est proche (sinon stop chassé) ; R:R revérifié ensuite. Ces réglages sont aussi dans `bot_settings` (la base écrase config.py).
    Niveaux des setups arrondis au pas de prix Kraken (`snap_to_tick` dans `strategies/base.py` : stop éloigné, TP rapprochés) ;
    le site arrondit aussi les prix pré-remplis aux décimales de la paire (`pair_decimals`).
+   Les perpétuels sur actions (PF_NVDAXUSD…) sont rangés en `xstock` (`classify_xstock_perps`, base = action) et analysés
+   seulement bourse US ouverte (`xstocks_us_hours_only`).
    **Le club trade uniquement les futures perpétuels Kraken (PF_…)** : `perps_only=True` dans `bot/.../config.py` (le bot n'analyse que les PF_),
    `trade_mode='futures'` par défaut côté site (`fees.js` : `perpsSeulement`, `venueEffective`, liste réelle des perpétuels via `setPerps`).
 4. Jamais « trade sûr », « gain garanti », « aucun risque », « machine à cash ».

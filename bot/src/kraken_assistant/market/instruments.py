@@ -99,6 +99,27 @@ def tick_decimals(tick: float, default: int = 8) -> int:
     return default
 
 
+def classify_xstock_perps(insts: list[Instrument]) -> int:
+    """Perpétuels sur actions (PF_NVDAXUSD, PF_TSLAXUSD, PF_SPYXUSD…) : Kraken les liste comme des futures « crypto ».
+    On les reconnaît grâce aux xStocks spot (NVDAx, TSLAx…) et on les range avec les actions (base = action sous-jacente)."""
+    xbases = {i.base.upper() for i in insts if i.asset_class == "xstock"}
+    n = 0
+    for i in insts:
+        b = (i.base or "").upper()
+        if i.venue == "futures" and i.asset_class == "crypto" and b.endswith("X") and len(b) > 2 and b[:-1] in xbases:
+            i.asset_class, i.base = "xstock", b[:-1]
+            n += 1
+    return n
+
+
+def us_market_open(now=None) -> bool:
+    """Bourse américaine ouverte (lun–ven, 9 h 30 – 16 h à New York, jours fériés non gérés)."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    t = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    return t.weekday() < 5 and (t.hour, t.minute) >= (9, 30) and t.hour < 16
+
+
 def _max_lev_from_margin(levels: list[dict] | None) -> int:
     if not levels:
         return 0
@@ -188,6 +209,7 @@ class InstrumentDiscovery:
                         out.append(inst)
             except DataUnavailable as e:
                 self.warnings.append(f"Futures indisponibles ({e})")
+        classify_xstock_perps(out)
         self._apply_account_access(out)
         self._cache, self._cache_ts = out, time.time()
         log.info("instruments=%d (spot=%d, futures=%d, tradables=%d)", len(out),
