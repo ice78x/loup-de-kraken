@@ -45,4 +45,4 @@ def test_stop_minimum_en_pourcentage():
                sl=99.9, tps=[101, 102, 103], invalidation_price=99.9, invalidation_text="", action="")
     apply_filters(st, NS(inst=NS(can_short=True, can_long=True), atr15=0.05, liquidity=None,
                          catalyst=NS(blocks={}, has_major=False, warnings=[]), vol=NS(regime="normal")), Settings(_env_file=None))
-    assert abs(st.sl - 99.65) < 1e-9                       # 0,35 % minimum
+    assert abs(st.sl - 99.5) < 1e-9                        # 0,5 % minimum

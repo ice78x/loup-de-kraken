@@ -42,7 +42,7 @@ export function touches(s, candles = []) {
 }
 
 /** Stop minimal (% du prix), comme le bot (min_sl_pct) : en dessous, le setup n'est pas jouable. */
-export const STOP_MIN_PCT = 0.35;
+export const STOP_MIN_PCT = 0.5;
 /** Phases « terminées » : on n'y entre plus (stop, objectif, parti sans nous, expiré, stop trop serré). */
 export const FINI = ["stop", "tp", "parti", "expire", "serre", "annule", "refuse"];
 
@@ -70,17 +70,17 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
     return { code: "parti", ton: "", icone: "🏃", titre: `TP${n} touché sans nous`, tp: n,
       texte: "Le prix a atteint l'objectif avant que l'entrée soit confirmée. On ne court jamais après un mouvement." };
   }
-  const eRef = L ? hi : lo; // entrée la moins bonne de la zone
-  const slPct = eRef > 0 && sl > 0 ? (Math.abs(eRef - sl) / eRef) * 100 : null;
-  if (slPct != null && slPct < STOP_MIN_PCT) {
-    return { code: "serre", ton: "short", icone: "🚫", titre: "Stop trop serré : ne pas prendre",
-      texte: `Le stop n'est qu'à ${pct(slPct, 2)} de l'entrée : une simple mèche le touche et les frais mangent le reste. Le bot ne propose plus ce genre de setup (stop minimum ${String(STOP_MIN_PCT).replace(".", ",")} %) : attends le prochain scan.` };
-  }
   // Gain visé trop faible pour le risque (le bot l'a refusé) : ce n'est pas un setup jouable, même s'il apparaît encore.
   const rr2 = Array.isArray(s.rr) && s.rr.length ? +s.rr[Math.min(1, s.rr.length - 1)] : null;
   if ((rr2 != null && rr2 < 1) || (s.warnings || []).some((w) => /mauvais ratio R:R/.test(w || ""))) {
     return { code: "refuse", ton: "short", icone: "🚫", titre: "Refusé : gain trop faible pour le risque",
       texte: `Le stop est plus loin que les objectifs${rr2 != null ? ` (TP2 = ${String(+rr2.toFixed(2)).replace(".", ",")} fois le risque)` : ""} : tu risquerais plus que ce que tu peux gagner. Le bot ne le valide pas : n'entre pas.` };
+  }
+  const eRef = L ? hi : lo; // entrée la moins bonne de la zone
+  const slPct = eRef > 0 && sl > 0 ? (Math.abs(eRef - sl) / eRef) * 100 : null;
+  if (slPct != null && slPct < STOP_MIN_PCT) {
+    return { code: "serre", ton: "short", icone: "🚫", titre: "Stop trop serré : ne pas prendre",
+      texte: `Le stop n'est qu'à ${pct(slPct, 2)} de l'entrée : une simple mèche le touche et les frais mangent le reste. Le bot ne propose plus ce genre de setup (stop minimum ${String(STOP_MIN_PCT).replace(".", ",")} %) : attends le prochain scan.` };
   }
   if (s.expires_at && new Date(s.expires_at).getTime() < now) {
     return { code: "expire", ton: "", icone: "⌛", titre: "Expiré",

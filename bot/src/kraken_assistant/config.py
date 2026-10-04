@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     # (ex. WIF du 02/10 : stop à 0,5 ATR → sorti par le bruit). Le trader regarde toutes les 10-30 min : il faut de l'air.
     min_sl_atr15: float = 1.2
     xstocks_us_hours_only: bool = True   # actions analysées seulement bourse US ouverte (lun–ven 15h30–22h Paris)
-    min_sl_pct: float = 0.35          # stop jamais plus près que 0,35 % du prix (marchés calmes : frais + bruit)
+    min_sl_pct: float = 0.5           # stop jamais plus près que 0,5 % du prix (04/10 : stops < 0,5 % → −0,47R en moyenne sur 51 signaux)
     liq_lookback_15m: int = 16        # stop placé au-delà du plus haut/bas des 4 dernières heures s'il est proche
     # Apprentissage sur les vrais résultats des signaux (table signal_outcomes, vue signal_stats)
     live_edges: dict = {}             # "stratégie|classe" -> {"n", "win_rate", "avg_r"} (rempli par le cloud)

@@ -150,14 +150,36 @@ def pending_rows(inserted: list[dict], pairs: list[tuple]) -> list[dict]:
 
 
 def live_edges(rows: list[dict]) -> dict:
-    """Vue signal_stats → {"stratégie|classe": {"n", "win_rate", "avg_r"}} (signaux 🟢 entrés seulement)."""
-    out = {}
+    """Vue signal_stats → {"stratégie|classe": {"n", "win_rate", "avg_r"}}.
+    🟢 et 🟡 sont additionnés : les deux sont rejoués de la même façon sur les vraies bougies, et attendre 15 🟢
+    par classe laissait passer des combinaisons qui perdent nettement (xStocks −1,2R, matières premières −0,3R au 04/10)."""
+    acc: dict[str, dict] = {}
     for x in rows or []:
-        if x.get("status") != "TRADE":
+        n = int(x.get("n") or 0)
+        if not n or x.get("status") not in ("TRADE", "WATCH"):
             continue
-        out[f"{x.get('strategy')}|{x.get('asset_class')}"] = {
-            "n": int(x.get("n") or 0), "win_rate": _f(x.get("win_rate")), "avg_r": _f(x.get("avg_r"))}
-    return out
+        a = acc.setdefault(f"{x.get('strategy')}|{x.get('asset_class')}", {"n": 0, "wins": 0.0, "sum_r": 0.0, "ok": True})
+        wr, ar, sr = _f(x.get("win_rate")), _f(x.get("avg_r")), _f(x.get("sum_r"))
+        if sr is None and ar is not None:
+            sr = ar * n
+        a["n"] += n
+        a["wins"] += (wr or 0) * n / 100
+        if sr is None:
+            a["ok"] = False
+        else:
+            a["sum_r"] += sr
+    return {k: {"n": a["n"], "win_rate": round(100 * a["wins"] / a["n"], 1), "avg_r": round(a["sum_r"] / a["n"], 3) if a["ok"] else None}
+            for k, a in acc.items()}
+
+
+def _select_all(sb, table: str, params: dict, page: int = 1000) -> list[dict]:
+    """PostgREST renvoie 1000 lignes au plus : on lit par pages."""
+    out: list[dict] = []
+    while True:
+        rows = sb.select(table, {**params, "limit": str(page), "offset": str(len(out))}) or []
+        out += rows
+        if len(rows) < page:
+            return out
 
 
 def resolve_signals(sb, app, days: int = 4, max_signals: int = 300) -> int:
@@ -168,10 +190,13 @@ def resolve_signals(sb, app, days: int = 4, max_signals: int = 300) -> int:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     cols = "id,created_at,expires_at,status,instrument_key,display,venue,api_symbol,api_asset_class,asset_class,strategy," \
            "direction,score,entry_low,entry_high,sl,tp1,tp2,tp3"
-    sigs = sb.select("signals", {"select": cols, "created_at": f"gte.{since}", "order": "created_at.asc", "limit": str(max_signals)})
-    done = {r["signal_id"] for r in sb.select("signal_outcomes", {"select": "signal_id,outcome", "created_at": f"gte.{since}"})
+    # Avant : les 300 PLUS ANCIENS signaux seulement, déjà terminés compris → au-delà de 300 signaux en 4 jours,
+    # les plus récents n'étaient jamais rejoués (aucun résultat du 03/10 ni du 04/10 enregistré).
+    sigs = _select_all(sb, "signals", {"select": cols, "created_at": f"gte.{since}", "order": "created_at.asc,id.asc"})
+    done = {r["signal_id"] for r in _select_all(sb, "signal_outcomes", {"select": "signal_id,outcome", "created_at": f"gte.{since}",
+                                                                       "order": "signal_id.asc"})
             if r.get("outcome") != EN_COURS}
-    todo = [s for s in sigs if s["id"] not in done]
+    todo = [s for s in sigs if s["id"] not in done][:max_signals]
     cache: dict[str, pd.DataFrame | None] = {}
     rows = []
     for s in todo:

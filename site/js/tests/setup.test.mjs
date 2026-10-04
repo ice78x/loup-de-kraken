@@ -154,7 +154,7 @@ test("paire spot tradée en perpétuel : x10 → liquidation à ≈ 5 %, pas « 
 });
 
 test("prix collé à la zone : pas de « 0 % », on écrit l'écart en prix", () => {
-  const p = phase({ ...short, entry_low: 4145.1, entry_high: 4148, sl: 4165, tp1: 4130 }, 4145, { now: NOW });
+  const p = phase({ ...short, entry_low: 4145.1, entry_high: 4148, sl: 4170, tp1: 4120 }, 4145, { now: NOW });
   assert.equal(p.code, "attendre");
   assert.doesNotMatch(p.texte, / 0 %/);
   assert.match(p.texte, /0,1 \$/);

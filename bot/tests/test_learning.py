@@ -59,7 +59,46 @@ def test_ligne_et_statistiques():
     assert row["outcome"] == "sl" and row["hour_paris"] == 14 and row["weekday"] == 5 and abs(row["sl_pct"] - 2) < 1e-9
     e = live_edges([{"status": "TRADE", "strategy": "cassure_retest", "asset_class": "crypto", "n": 20, "win_rate": 35, "avg_r": -0.3},
                     {"status": "WATCH", "strategy": "x", "asset_class": "crypto", "n": 9, "win_rate": 50, "avg_r": 0.1}])
-    assert list(e) == ["cassure_retest|crypto"]
+    assert sorted(e) == ["cassure_retest|crypto", "x|crypto"] and e["cassure_retest|crypto"]["avg_r"] == -0.3
+
+
+def test_vert_et_jaune_additionnes():
+    """Vrais chiffres du 04/10 : rejet_sweep sur xStocks = 3 🟢 + 14 🟡, tous perdants → bloqué même sans 15 🟢."""
+    e = live_edges([{"status": "TRADE", "strategy": "rejet_sweep", "asset_class": "xstock", "n": 3, "win_rate": 0, "avg_r": -1.149, "sum_r": -3.45},
+                    {"status": "WATCH", "strategy": "rejet_sweep", "asset_class": "xstock", "n": 14, "win_rate": 0, "avg_r": -1.23, "sum_r": -17.22}])
+    x = e["rejet_sweep|xstock"]
+    assert x["n"] == 17 and x["win_rate"] == 0 and abs(x["avg_r"] - (-20.67 / 17)) < 1e-3
+
+
+class _FakeSb:
+    """Simule PostgREST : 1000 lignes max par réponse."""
+    def __init__(self, signals, outcomes):
+        self.t = {"signals": signals, "signal_outcomes": outcomes}
+        self.upserted = []
+
+    def select(self, table, params):
+        rows = self.t[table]
+        off, lim = int(params.get("offset", 0)), min(int(params.get("limit", 1000)), 1000)
+        return rows[off:off + lim]
+
+    def upsert(self, table, rows, key):
+        self.upserted += rows
+
+
+def test_les_signaux_recents_sont_rejoues_meme_apres_300_anciens(monkeypatch):
+    """Bug du 04/10 : seuls les 300 plus anciens signaux (déjà terminés) étaient relus → 03/10 et 04/10 jamais rejoués."""
+    from kraken_assistant.cloud import learning
+    import kraken_assistant.market.candles as candles
+    old = [dict(SIG, id=i) for i in range(1, 1201)]
+    new = dict(SIG, id=5000, venue="spot", api_symbol="XUSD", display="X", created_at=(T0 + pd.Timedelta(hours=1)).isoformat())
+    sb = _FakeSb(old + [new], [{"signal_id": i, "outcome": "sl"} for i in range(1, 1201)])
+    seen = []
+    monkeypatch.setattr(learning, "resolve", lambda s, bars, now=None: seen.append(s["id"]))
+    monkeypatch.setattr(candles, "drop_unclosed", lambda df, m: df)
+    monkeypatch.setattr(candles, "spot_rows_to_df", lambda rows: bars([(100, 99, 100)]))
+    app = NS(spot=NS(ohlc=lambda *a, **k: []), futures=NS(candles=lambda *a, **k: []))
+    learning.resolve_signals(sb, app)
+    assert seen == [5000]
 
 
 def test_une_combinaison_perdante_ne_donne_plus_de_vert():
