@@ -67,15 +67,20 @@ export async function render(main, ctx) {
   // Les 2 derniers scans : tout le dernier, plus les setups du précédent qui n'y sont plus (même paire + même sens = on garde le plus récent).
   const scan = scans[0] || null, prev = scans[1] || null;
   const [sigsNow, sigsPrev] = await Promise.all([scan ? backend.signalsOf(scan.id) : [], prev ? backend.signalsOf(prev.id).catch(() => []) : []]);
-  const cle = (s) => `${s.instrument_key}|${s.direction}`;
+  // Une seule carte par paire : le scan le plus récent fait foi (jamais un LONG et un SHORT sur la même paire en même temps).
+  const cle = (s) => s.instrument_key || s.display;
   const deja = new Set(sigsNow.map(cle));
-  let sigs = [...sigsNow, ...sigsPrev.filter((s) => !deja.has(cle(s))).map((s) => ({ ...s, precedent: prev.created_at }))];
+  // Sens inversé par rapport au scan précédent sur la même paire : on le signale (marché indécis).
+  const sensAvant = new Map(sigsPrev.map((s) => [cle(s), s.direction]));
+  let sigs = [...sigsNow.map((s) => (sensAvant.has(cle(s)) && sensAvant.get(cle(s)) !== s.direction ? { ...s, inverse: true } : s)),
+    ...sigsPrev.filter((s) => !deja.has(cle(s))).map((s) => ({ ...s, precedent: prev.created_at }))];
   // Vérifications express (bouton « Vérifier maintenant ») arrivées depuis le dernier scan : elles remplacent l'ancien setup de la paire.
   const cibles = scan ? await backend.cibleScans(scan.created_at).catch(() => []) : [];
   for (const c of cibles) {
     const neufs = (await backend.signalsOf(c.id).catch(() => [])).map((s) => ({ ...s, verifie: c.created_at }));
     const revus = new Set((c.opportunities || []).map((o) => o.display));
     const cles = new Set(neufs.map(cle));
+    // La vérification remplace tout ce qu'on avait sur la paire (les deux sens) ; sans nouveau setup, l'ancien est abandonné.
     sigs = sigs.filter((s) => !cles.has(cle(s))).map((s) => (revus.has(s.display) && !s.verifie ? { ...s, revuSans: c.created_at } : s));
     sigs.push(...neufs);
   }

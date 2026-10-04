@@ -430,6 +430,7 @@ export function setupCard(s, me, maxLev = 10) {
     </header>
     ${confiance(s)}
     <p class="setup-idee">${idee(s)}</p>
+    ${s.inverse ? `<p class="alerte small">⚠️ Au scan précédent, le bot voyait le sens <b>inverse</b> sur cette paire : marché indécis. Attends une confirmation nette, ou passe ton tour.</p>` : ""}
     <div class="feu" data-phase><span class="feu-icone">…</span><div><strong>Lecture du prix Kraken…</strong></div></div>
     <div class="setup-graph" data-chart aria-label="Graphique 15 minutes de ${esc(s.display)} avec le plan du bot"></div>
     ${LEGENDE}
