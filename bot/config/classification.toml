@@ -3,10 +3,11 @@
 # Tu peux l'enrichir librement.
 
 [commodities]
-# Tickers de base considérés comme matières premières (spot tokenisé, xStocks d'ETF matières, perpétuels tradfi)
-bases = ["PAXG", "XAUT", "XAU", "XAG", "GOLD", "SILVER", "WTI", "BRENT", "OIL", "USO", "UKOIL", "USOIL",
-         "NG", "NATGAS", "COPPER", "HG", "XPT", "XPD", "PLATINUM", "PALLADIUM",
-         "GLD", "SLV", "GLDX", "SLVX", "USOX", "IAUX", "PPLTX", "CPERX"]
+# Matières premières = exactement l'onglet « Matières premières » des contrats perpétuels Kraken Pro (vérifié le 04/10/2026) :
+# WTIOIL, BRENTOIL, NATGAS, XCU (cuivre), XAG (argent), XAU (or). + noms équivalents si Kraken en ajoute.
+# PAXG / XAUT (jetons adossés à l'or) sont rangés en crypto, et les ETF tokenisés (GLDx, SLVx…) en xStocks, comme sur Kraken.
+bases = ["XAU", "XAG", "XCU", "XPT", "XPD", "WTIOIL", "BRENTOIL", "NATGAS", "GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM",
+         "WTI", "BRENT", "UKOIL", "USOIL"]
 
 [exclude]
 # Bases exclues du scan (stablecoins, fiat) — elles restent utilisées pour la conversion de devise.

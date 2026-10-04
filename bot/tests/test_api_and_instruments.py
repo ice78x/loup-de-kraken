@@ -70,7 +70,21 @@ def test_parse_xstock_et_matiere_premiere(settings):
     assert x.asset_class == "xstock" and x.base == "TSLA" and not x.can_short
     g = parse_spot_pair("PAXGEUR", {"altname": "PAXGEUR", "base": "PAXG", "quote": "ZEUR", "status": "online"},
                         tax(settings), None)
-    assert g.asset_class == "commodity"
+    assert g.asset_class == "crypto"                  # jeton adossé à l'or : rangé en crypto, comme sur Kraken
+
+
+def test_matieres_premieres_comme_sur_kraken(settings):
+    """Onglet « Matières premières » des perpétuels Kraken Pro (04/10) : WTIOIL, BRENTOIL, NATGAS, XCU, XAG, XAU."""
+    from kraken_assistant.market.instruments import classify_xstock_perps, parse_futures_instrument
+    t = tax(settings)
+    mk = lambda b: parse_futures_instrument({"type": "flexible_futures", "symbol": f"PF_{b}USD", "base": b, "quote": "USD",  # noqa: E731
+                                             "tradeable": True, "tickSize": 0.01, "retailMarginLevels": [{"contracts": 0, "initialMargin": 0.1}]},
+                                            t, "FR", 10)
+    got = {b: mk(b).asset_class for b in ("WTIOIL", "BRENTOIL", "NATGAS", "XCU", "XAG", "XAU", "PAXG", "XAUT", "SOL")}
+    assert got == {"WTIOIL": "commodity", "BRENTOIL": "commodity", "NATGAS": "commodity", "XCU": "commodity", "XAG": "commodity",
+                   "XAU": "commodity", "PAXG": "crypto", "XAUT": "crypto", "SOL": "crypto"}
+    gld_spot = parse_spot_pair("GLDxUSD", {"altname": "GLDxUSD", "base": "GLDx", "quote": "ZUSD", "status": "online"}, t, "tokenized_asset")
+    assert gld_spot.asset_class == "xstock"
 
 
 def test_paire_non_tradable_ou_exclue(settings):

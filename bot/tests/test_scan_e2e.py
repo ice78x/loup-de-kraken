@@ -26,7 +26,7 @@ def test_scan_complet_mode_paper(settings, tmp_path):
     assert rep.verdict in ("TRADE", "WATCH", "NONE")
     assert rep.counts["analysés"] >= 5                        # crypto + xStock + matière première
     classes = {o["asset_class"] for o in rep.opportunities}
-    assert {"crypto", "xstock", "commodity"} <= classes
+    assert {"crypto", "xstock"} <= classes                 # matières premières = perpétuels seulement (test dédié)
     assert any("news absentes" in d for d in rep.data_issues)   # news indisponibles signalées, pas inventées
     text = format_report(rep)
     assert text.splitlines()[0].startswith(("🟢", "🟡", "🛑", "🔴"))
