@@ -112,6 +112,9 @@ def test_preuve_statistique(settings):
     assert any("perd en backtest" in x for x in kill_switch(_st(), _a(rg), bad, q))
     few = settings.model_copy(update={"v2_edges": {key: {"n": 8, "expectancy_r": 0.9, "profit_factor": 3}}})
     assert any("non démontré" in x for x in kill_switch(_st(), _a(rg), few, q))
+    oos = settings.model_copy(update={"v2_edges": {key: {"n": 38, "expectancy_r": 0.064, "profit_factor": 1.1,
+                                                         "oos_n": 4, "oos_expectancy_r": -1.132}}})   # vrai cas du 04/10
+    assert any("hors échantillon" in x for x in kill_switch(_st(), _a(rg), oos, q))
     off = settings.model_copy(update={"require_proven_edge": False})
     assert kill_switch(_st(), _a(rg), off, q) == []
 
@@ -175,7 +178,7 @@ def test_table_des_edges(settings):
     e = edge_table([("x|RANGE", 1.0)] * 15 + [("x|RANGE", -1.0)] * 10)
     assert e["x|RANGE"]["n"] == 25 and e["x|RANGE"]["profit_factor"] == 1.5
     assert proven(e["x|RANGE"], settings)
-    e["x|RANGE"].update(oos_n=8, oos_expectancy_r=-0.2)
+    e["x|RANGE"].update(oos_n=3, oos_expectancy_r=-0.2)
     assert not proven(e["x|RANGE"], settings)                         # positif sur tout, mais négatif hors échantillon
 
 

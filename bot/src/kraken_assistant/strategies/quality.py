@@ -150,5 +150,10 @@ def kill_switch(st, a, s: Settings, q: dict, check_edge: bool = True) -> list[st
         elif e.get("n", 0) < s.edge_min_trades:
             out.append(f"avantage statistique non démontré ({e.get('n', 0)} trades testés, {s.edge_min_trades} requis)")
         elif (e.get("expectancy_r") or 0) <= 0 or (e.get("profit_factor") or 0) < s.edge_min_pf:
-            out.append(f"perd en backtest hors échantillon ({e.get('expectancy_r', 0):+.2f}R/trade sur {e.get('n')} trades)")
+            out.append(f"perd en backtest ({e.get('expectancy_r', 0):+.2f}R/trade sur {e.get('n')} trades)")
+        else:
+            from ..backtest.walkforward import proven
+            if not proven(e, s):
+                out.append(f"perd en backtest hors échantillon ({(e.get('oos_expectancy_r') or 0):+.2f}R/trade sur "
+                           f"{e.get('oos_n')} trades jamais vus)")
     return out

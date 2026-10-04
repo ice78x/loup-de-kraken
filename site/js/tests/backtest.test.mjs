@@ -30,3 +30,9 @@ test("rapport sans aucune combinaison prouvée → message NO TRADE", () => {
   const run = { created_at: new Date().toISOString(), report: { jours: 60, instruments: {}, periode_hors_echantillon: "x", avant: { trades: 0 }, apres: { trades: 0 }, edges: {} } };
   assert.match(backtestBlock(run), /Aucune combinaison prouvée/);
 });
+
+test("une combinaison qui perd hors échantillon (3 trades ou plus) n'est plus affichée comme prouvée", () => {
+  const run = { created_at: new Date().toISOString(), report: { jours: 120, instruments: {}, periode_hors_echantillon: "x", avant: { trades: 0 }, apres: { trades: 0 },
+    edges: { "cassure_retest|TREND": { n: 38, expectancy_r: 0.064, profit_factor: 1.1, prouve: true, oos_n: 4, oos_expectancy_r: -1.132 } } } };
+  assert.match(backtestBlock(run), /Aucune combinaison prouvée/);
+});

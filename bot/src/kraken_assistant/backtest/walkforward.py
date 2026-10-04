@@ -60,8 +60,10 @@ def proven(e: dict | None, s: Settings) -> bool:
         return False
     if (e.get("expectancy_r") or 0) <= 0 or (e.get("profit_factor") or 0) < s.edge_min_pf:
         return False
-    oos_n, oos_e = e.get("oos_n", 0), e.get("oos_expectancy_r")
-    return not (oos_n >= 5 and oos_e is not None and oos_e <= 0)
+    # Hors échantillon : dès 3 trades réellement joués par le walk-forward, une espérance ≤ 0 annule la preuve
+    # (ex. 04/10 : cassure_retest en tendance, +0,06R sur tout l'historique mais −1,13R sur ses 4 trades hors échantillon).
+    oos_n, oos_e = e.get("oos_n", 0) or 0, e.get("oos_expectancy_r")
+    return not (oos_n >= 3 and oos_e is not None and oos_e <= 0)
 
 
 def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settings, p: BTParams,

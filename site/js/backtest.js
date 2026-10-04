@@ -34,7 +34,10 @@ export function backtestBlock(run, { admin = false } = {}) {
   if (!r.avant) {
     return `<section class="section"><h2>📊 Backtest du moteur</h2><div class="vide"><strong>Backtest impossible</strong>${esc(r.message || "données insuffisantes")}</div>${bouton}</section>`;
   }
-  const edges = Object.entries(r.edges || {}).sort((a, b) => (b[1].prouve - a[1].prouve) || b[1].n - a[1].n);
+  // Même règle que le bot (walkforward.proven) : une espérance ≤ 0 sur 3 trades hors échantillon ou plus annule la preuve.
+  const ok = (e) => !!e.prouve && !((+e.oos_n || 0) >= 3 && e.oos_expectancy_r != null && +e.oos_expectancy_r <= 0);
+  const edges = Object.entries(r.edges || {}).map(([k, e]) => [k, { ...e, prouve: ok(e) }])
+    .sort((a, b) => (b[1].prouve - a[1].prouve) || b[1].n - a[1].n);
   const prouves = edges.filter(([, e]) => e.prouve);
   return `<section class="section"><h2>📊 Backtest du moteur</h2>
     <p class="muted">Rejoué sur <b>${Object.keys(r.instruments || {}).length} perpétuels Kraken</b> (vraies bougies 15 min, ${r.jours} jours).
