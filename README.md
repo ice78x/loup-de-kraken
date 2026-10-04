@@ -98,7 +98,7 @@ Tu vas créer 3 comptes gratuits. Le plus simple : crée d'abord le compte GitHu
 5. Attends 2 à 4 minutes. La ligne doit devenir **verte ✅**.
    - En cas de croix rouge ❌ : clique dessus et envoie-moi le texte rouge.
 
-Ensuite, le bot tourne **tout seul toutes les heures, de 6 h à 23 h**. Il optimise ses réglages **chaque dimanche**.
+Ensuite, le bot tourne **tout seul toutes les heures, 24 h / 24**. Il optimise ses réglages **chaque dimanche**.
 
 ### Étape 5 : mettre le site en ligne (Netlify)
 
@@ -214,7 +214,7 @@ Pour que tes amis puissent aussi modifier le code : sur GitHub, **Settings → C
 | Netlify | 125 000 appels de fonctions, 100 Go/mois | prix en direct toutes les 30 s seulement quand la page est ouverte |
 
 Si les minutes GitHub devenaient justes, tu as deux options :
-- espacer les scans : dans `.github/workflows/scan.yml`, remplacer `4-21` par `6-20` ;
+- espacer les scans : dans `.github/workflows/scan.yml`, remplacer `5 * * * *` par `5 4-21 * * *` (de 6 h à 23 h seulement) ;
 - rendre le dépôt public : les minutes deviennent illimitées, mais le code est alors visible de tous (aucun secret n'y est).
 
 ---

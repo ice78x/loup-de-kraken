@@ -1,4 +1,4 @@
-// Ce qui s'est passé sur un trade ouvert DEPUIS le dernier passage du bot (le bot ne tourne pas la nuit, de 23 h à 6 h).
+// Ce qui s'est passé sur un trade ouvert DEPUIS le dernier passage du bot (il passe une fois par heure, à hh:05).
 // Lu sur les vraies bougies Kraken, mêmes règles que le bot : dans une même bougie, le stop est testé avant les objectifs.
 // Rien n'est enregistré ici : c'est le bot qui l'enregistrera à son prochain passage.
 
@@ -26,6 +26,6 @@ export function texteDepuis(d, prochainScan) {
   if (!d) return "";
   const quoi = d.sl ? (d.tps.length ? `TP${d.tps.join(", TP")} puis le stop touchés` : "le stop touché")
     : d.tps.length === 1 ? `TP${d.tps[0]} touché` : `TP${d.tps.slice(0, -1).join(", TP")} et TP${d.tps.at(-1)} touchés`;
-  return `${d.sl ? "❌" : "🎯"} ${quoi.charAt(0).toUpperCase() + quoi.slice(1)} depuis le dernier passage du bot. Le bot ne tourne pas la nuit (23 h – 6 h) :
-    il l'enregistrera tout seul à son prochain passage (vers ${prochainScan}), avec les vraies bougies Kraken.`;
+  return `${d.sl ? "❌" : "🎯"} ${quoi.charAt(0).toUpperCase() + quoi.slice(1)} depuis le dernier passage du bot.
+    Il l'enregistrera tout seul à son prochain passage (vers ${prochainScan}), avec les vraies bougies Kraken.`;
 }

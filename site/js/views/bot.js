@@ -19,7 +19,7 @@ export async function render(main, ctx) {
   const [settings, log, edges] = await Promise.all([backend.settings(), backend.settingsLog(), backend.edges()]);
   main.innerHTML = `
     <h1>Le bot</h1>
-    <p>Chaque heure, de 6 h à 23 h, le bot analyse les marchés Kraken et publie ici ses trades. Page réservée à l'admin : les membres envoient leurs idées depuis l'onglet Idées, tu les reçois dans Mon compte.</p>
+    <p>Chaque heure, 24 h / 24, le bot analyse les marchés Kraken et publie ici ses trades. Page réservée à l'admin : les membres envoient leurs idées depuis l'onglet Idées, tu les reçois dans Mon compte.</p>
 
     <section class="section"><h2>Comment il décide un trade</h2>
       <ol class="bloc pile" style="padding-left:36px">

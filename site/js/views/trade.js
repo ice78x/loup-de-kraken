@@ -81,7 +81,7 @@ export async function render(main, ctx, id) {
   let chart = null;
   ohlc(t, 15).then((c) => {
     if (el.isConnected && c?.length) chart = candleChart(el, c.slice(-160), { lines }); else { el.innerHTML = '<p class="vide">Graphique indisponible.</p>'; return; }
-    // TP / SL touchés depuis le dernier passage du bot (la nuit, il ne tourne pas) : on le montre tout de suite.
+    // TP / SL touchés depuis le dernier passage du bot (il passe une fois par heure) : on le montre tout de suite.
     const d = depuisDernierPassage(t, c);
     const box = main.querySelector("#depuis");
     if (d && box) box.innerHTML = `<div class="alerte ${d.sl ? "rouge" : ""}"><b>${esc(texteDepuis(d, nextScan()))}</b>
