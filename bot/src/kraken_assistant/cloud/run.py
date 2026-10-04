@@ -168,6 +168,11 @@ def push_scan(sb: Supabase, rep, tr=None) -> int:
         # Les 10 premières news (celles affichées) sont traduites ; les autres gardent leur titre original.
         "news": [news_row(n, tr, translate=i < 10) for i, n in enumerate(rep.news)],
         "data_issues": rep.data_issues[:30], "duration_s": rep.duration_s})[0]
+    try:
+        from .notify import welcome_once
+        welcome_once(sb)
+    except Exception as e:  # noqa: BLE001 — jamais bloquant
+        log.warning("bienvenue Telegram non envoyée : %s", type(e).__name__)
     rows = signal_rows(rep, row["id"], tr)
     if rows:
         try:

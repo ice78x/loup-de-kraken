@@ -118,3 +118,32 @@ def notify_trades(sb, inserted: list[dict], client: httpx.Client | None = None, 
     if sent:
         log.info("Telegram : %d message(s) envoyé(s)", sent)
     return sent
+
+
+WELCOME_KEY = "telegram_bienvenue"
+
+
+def welcome_once(sb, client: httpx.Client | None = None) -> bool:
+    """Premier scan après la configuration : un message « ✅ connecté » (une seule fois), pour vérifier les secrets
+    sans attendre un 🟢. Mémorisé dans bot_settings (clé ignorée par les réglages)."""
+    cfg = config()
+    if not cfg:
+        return False
+    try:
+        if sb.select("bot_settings", {"select": "key", "key": f"eq.{WELCOME_KEY}"}):
+            return False
+    except Exception as ex:  # noqa: BLE001
+        log.warning("Telegram : vérification du message de bienvenue impossible (%s)", type(ex).__name__)
+        return False
+    token, chats = cfg
+    text = ("✅ <b>Notifications activées</b>\nLe Loup de Kraken t'écrira ici à chaque nouveau 🟢 ou 🔥 "
+            "(jamais pour un 🟡). Pas de message = pas de trade propre : c'est normal.")
+    if send(text, token, chats, client) == 0:
+        return False
+    try:
+        sb.upsert("bot_settings", [{"key": WELCOME_KEY, "value": True, "label": "Telegram connecté",
+                                    "help": "Message de bienvenue Telegram déjà envoyé (technique)."}], "key")
+    except Exception as ex:  # noqa: BLE001
+        log.warning("Telegram : bienvenue envoyée mais non mémorisée (%s)", type(ex).__name__)
+    log.info("Telegram : message de bienvenue envoyé")
+    return True

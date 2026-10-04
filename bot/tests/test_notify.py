@@ -56,3 +56,23 @@ def test_envoi_sans_doublon_ni_jaune(monkeypatch):
     sent.clear()
     assert notify.notify_trades(FakeSb([{"id": 650, "instrument_key": ROW["instrument_key"], "direction": "LONG"}]), [ROW], client=c) == 0
     assert not sent
+
+
+def test_bienvenue_une_seule_fois(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "111")
+    sent, c = capture()
+
+    class Sb:
+        rows = []
+
+        def select(self, table, params):
+            return self.rows
+
+        def upsert(self, table, rows, key):
+            self.rows = rows
+
+    sb = Sb()
+    assert notify.welcome_once(sb, client=c) is True and len(sent) == 1 and "Notifications activées" in sent[0].content.decode()
+    assert sb.rows[0]["key"] == "telegram_bienvenue"
+    assert notify.welcome_once(sb, client=c) is False and len(sent) == 1
