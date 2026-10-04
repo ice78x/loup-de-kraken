@@ -84,6 +84,12 @@ async function route() {
   }
   if (!ctx.me?.approved) { root.innerHTML = banner + '<div id="main"></div>'; return auth.renderPending(document.getElementById("main"), ctx); }
   // Solde à jour avec les gains/pertes des trades (recalculé à chaque page, rien n'est modifié dans la base).
+  // Trades d'entraînement : TP / SL touchés depuis le dernier passage du bot → enregistrés avant de calculer le solde.
+  try {
+    const { rattraper } = await import("./suivi.js");
+    const { ohlc } = await import("./market.js");
+    if (!DEMO) await rattraper(backend, ohlc, ctx.me?.id); // en démo, les bougies sont fictives : on ne touche à rien
+  } catch { /* le bot s'en chargera à son prochain passage */ }
   try { await majSolde(ctx, backend); } catch { /* on garde le solde enregistré */ }
   setMode(ctx.me?.trade_mode); // frais / levier / liquidation : futures perpétuels par défaut, ou spot (Mon compte)
   if (!perpsCharges) { perpsCharges = true; try { setPerps(await backend.perps()); } catch { perpsCharges = false; } }

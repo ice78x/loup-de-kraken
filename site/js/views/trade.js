@@ -1,12 +1,12 @@
 // Détail d'un trade : graphique, conseil du bot, historique des évènements, actions (encaisser, bouger le SL, clôturer).
 import { candleChart } from "../charts.js";
-import { backend } from "../data.js";
+import { DEMO, backend } from "../data.js";
 import { ladder } from "../ladder.js";
 import { krakenLink, ohlc, prices } from "../market.js";
 import { TP_SPLIT, closePart, pnlBreakdown, recalculerFrais } from "../sizing.js";
 import { krakenFees } from "../fees.js";
 import { STRAT, busy, cls, dt, esc, eur, modal, nextScan, num, pq, px, rr, toast } from "../ui.js";
-import { depuisDernierPassage, texteDepuis } from "../suivi.js";
+import { depuisDernierPassage, rejouer, texteDepuis } from "../suivi.js";
 
 const ev = (text) => ({ at: new Date().toISOString(), by: "membre", text });
 
@@ -91,6 +91,31 @@ export async function render(main, ctx, id) {
     .catch(() => { el.innerHTML = '<p class="vide">Graphique indisponible (Kraken ne répond pas).</p>'; });
   ctx.onLeave(() => chart?.remove());
   const reload = () => render(main, ctx, id);
+
+  // TP / SL / liquidation touchés depuis le dernier passage du bot : rejoués sur les vraies bougies 5 min (mêmes règles que le bot).
+  // Trade d'entraînement : enregistré tout de suite. Trade réel : on propose (c'est Kraken qui fait foi).
+  if (mine && !DEMO && t.status === "ouvert" && t.auto_track !== false) {
+    ohlc(t, 5).then(async (c5) => {
+      const { upd, events } = rejouer(t, c5);
+      if (!events.length || !main.isConnected) return;
+      const box = main.querySelector("#depuis");
+      if (t.mode === "paper") {
+        await backend.updateTrade(t.id, upd);
+        toast(`Mis à jour avec les vraies bougies Kraken : ${events.map((e) => e.replace(/^\S+ \S+ /, "")).join(" · ")}`);
+        reload();
+        return;
+      }
+      if (box) {
+        box.innerHTML = `<div class="alerte ${upd.close_reason?.startsWith("SL") || upd.close_reason === "Liquidation" ? "rouge" : ""}">
+          <b>Depuis le dernier passage du bot, d'après les bougies Kraken :</b><ul>${events.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>
+          <p class="small">Trade réel : vérifie sur Kraken que ces ordres ont bien été exécutés, puis enregistre.</p>
+          <button class="btn principal mini" id="appliquer">Enregistrer ces sorties</button></div>`;
+        box.querySelector("#appliquer").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+          await backend.updateTrade(t.id, upd); toast("Enregistré."); reload();
+        }));
+      }
+    }).catch(() => { /* bougies indisponibles : le bot s'en chargera au prochain passage */ });
+  }
   if (!mine) return;
 
   main.querySelector("#refrais-ok")?.addEventListener("click", (e) => busy(e.currentTarget, async () => {

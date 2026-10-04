@@ -185,50 +185,63 @@ def track_trades(sb: Supabase, app: App) -> int:
     cache: dict[str, tuple] = {}
     n = 0
     for t in trades:
-        key = t["instrument_key"]
         try:
-            if key not in cache:
-                inst = insts.get(key)
-                frames = app.candles.frames(inst) if inst else None
-                cache[key] = (_bars5(app, t), frames)
-            bars5, frames = cache[key]
-        except (DataUnavailable, KeyError, ValueError) as e:
-            log.warning("trade %s (%s) : bougies indisponibles (%s)", t["id"], t["display"], e)
-            continue
-        upd: dict = {}
-        if t.get("auto_track", True):
-            upd, events = advance_trade(t, bars5, app.settings.tp_split)
-            for e in events:
-                log.info("trade #%s %s : %s", t["id"], t["display"], e)
-        merged = {**t, **upd}
-        if merged.get("status") == "ouvert" and frames is not None and merged.get("sl") is None:
-            liq = merged.get("liq_price")
-            upd.update(advice=(f"HOLD — pas de stop : marge isolée, liquidation vers {float(liq):.6g}. "
-                               "Pense à poser un stop si le scénario s'invalide." if liq else
-                               "HOLD — pas de stop et pas de levier : surveille l'invalidation de ton scénario.")[:500],
-                       advice_at=datetime.now(timezone.utc).isoformat())
-        elif merged.get("status") == "ouvert" and frames is not None:
-            pos = Position(id=t["id"], source=t["mode"], instrument_key=key, display=t["display"], base="",
-                           venue=t.get("venue") or "", asset_class=t.get("asset_class") or "",
-                           direction=t["direction"], entry=float(t["entry_price"]), qty_initial=float(t["qty"]),
-                           qty_remaining=float(merged["qty_remaining"]), sl=float(merged["sl"]),
-                           tp1=t.get("tp1"), tp2=t.get("tp2"), tp3=t.get("tp3"), tp1_hit=merged["tp1_hit"],
-                           tp2_hit=merged["tp2_hit"], tp3_hit=merged["tp3_hit"], status="open",
-                           eur_per_quote=float(t.get("eur_per_quote") or 1), fee_rate_pct=float(t.get("fee_pct") or 0),
-                           realized_pnl_eur=float(merged.get("realized_pnl_eur") or 0))
-            adv = advise(pos, frames, float(frames["5m"]["close"].iloc[-1]), app.settings.tp_split)
-            text = adv.action + (f" → SL {adv.new_sl:.6g}" if adv.new_sl else "") + " — " + " ; ".join(adv.details)
-            upd.update(advice=text[:500], advice_at=datetime.now(timezone.utc).isoformat())
-            # En paper, le bot applique lui-même le déplacement de SL conseillé (break-even confirmé, suiveur).
-            if t["mode"] == "paper" and adv.new_sl is not None:
-                upd["sl"] = adv.new_sl
-                upd["events"] = list(merged.get("events") or []) + [
-                    {"at": datetime.now(timezone.utc).isoformat(), "by": "bot", "text": f"SL déplacé à {adv.new_sl:.6g}"}]
-        if upd:
-            sb.update("trades", {"id": f"eq.{t['id']}"}, upd)
-            n += 1
+            n += _track_one(sb, app, t, insts, cache)
+        except Exception as e:  # noqa: BLE001 — un trade en erreur ne doit jamais bloquer le suivi des autres
+            log.error("trade %s (%s) : suivi impossible (%s: %s)", t.get("id"), t.get("display"), type(e).__name__, e)
     log.info("trades membres suivis : %d/%d", n, len(trades))
     return n
+
+
+def _track_one(sb: Supabase, app: App, t: dict, insts: dict, cache: dict) -> int:
+    key = t["instrument_key"]
+    try:
+        if key not in cache:
+            inst = insts.get(key)
+            bars5 = _bars5(app, t)
+            try:  # les bougies multi-unités ne servent qu'au conseil : leur absence ne bloque jamais TP / SL
+                frames = app.candles.frames(inst) if inst else None
+            except Exception as e:  # noqa: BLE001
+                log.warning("trade %s (%s) : conseil indisponible (%s)", t["id"], t["display"], e)
+                frames = None
+            cache[key] = (bars5, frames)
+        bars5, frames = cache[key]
+    except (DataUnavailable, KeyError, ValueError) as e:
+        log.warning("trade %s (%s) : bougies indisponibles (%s)", t["id"], t["display"], e)
+        return 0
+    upd: dict = {}
+    if t.get("auto_track", True):
+        upd, events = advance_trade(t, bars5, app.settings.tp_split)
+        for e in events:
+            log.info("trade #%s %s : %s", t["id"], t["display"], e)
+    merged = {**t, **upd}
+    if merged.get("status") == "ouvert" and frames is not None and merged.get("sl") is None:
+        liq = merged.get("liq_price")
+        upd.update(advice=(f"HOLD — pas de stop : marge isolée, liquidation vers {float(liq):.6g}. "
+                           "Pense à poser un stop si le scénario s'invalide." if liq else
+                           "HOLD — pas de stop et pas de levier : surveille l'invalidation de ton scénario.")[:500],
+                   advice_at=datetime.now(timezone.utc).isoformat())
+    elif merged.get("status") == "ouvert" and frames is not None:
+        pos = Position(id=t["id"], source=t["mode"], instrument_key=key, display=t["display"], base="",
+                       venue=t.get("venue") or "", asset_class=t.get("asset_class") or "",
+                       direction=t["direction"], entry=float(t["entry_price"]), qty_initial=float(t["qty"]),
+                       qty_remaining=float(merged["qty_remaining"]), sl=float(merged["sl"]),
+                       tp1=t.get("tp1"), tp2=t.get("tp2"), tp3=t.get("tp3"), tp1_hit=merged["tp1_hit"],
+                       tp2_hit=merged["tp2_hit"], tp3_hit=merged["tp3_hit"], status="open",
+                       eur_per_quote=float(t.get("eur_per_quote") or 1), fee_rate_pct=float(t.get("fee_pct") or 0),
+                       realized_pnl_eur=float(merged.get("realized_pnl_eur") or 0))
+        adv = advise(pos, frames, float(frames["5m"]["close"].iloc[-1]), app.settings.tp_split)
+        text = adv.action + (f" → SL {adv.new_sl:.6g}" if adv.new_sl else "") + " — " + " ; ".join(adv.details)
+        upd.update(advice=text[:500], advice_at=datetime.now(timezone.utc).isoformat())
+        # En paper, le bot applique lui-même le déplacement de SL conseillé (break-even confirmé, suiveur).
+        if t["mode"] == "paper" and adv.new_sl is not None:
+            upd["sl"] = adv.new_sl
+            upd["events"] = list(merged.get("events") or []) + [
+                {"at": datetime.now(timezone.utc).isoformat(), "by": "bot", "text": f"SL déplacé à {adv.new_sl:.6g}"}]
+    if upd:
+        sb.update("trades", {"id": f"eq.{t['id']}"}, upd)
+        return 1
+    return 0
 
 
 def learn(sb: Supabase, app: App) -> None:

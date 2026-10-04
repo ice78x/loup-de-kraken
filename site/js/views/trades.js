@@ -1,9 +1,10 @@
 // Mes trades : positions ouvertes (P&L en direct) et historique avec statistiques.
-import { backend } from "../data.js";
-import { prices } from "../market.js";
+import { DEMO, backend } from "../data.js";
+import { ohlc, prices } from "../market.js";
+import { rattraper } from "../suivi.js";
 import { pnlBreakdown } from "../sizing.js";
 import { soldeBloc, soldeLive } from "../solde.js";
-import { STRAT, cls, dt, esc, eur, pct, pq, px, rr } from "../ui.js";
+import { STRAT, cls, dt, esc, eur, pct, pq, px, rr, toast } from "../ui.js";
 
 export function stats(list) {
   const closed = list.filter((t) => t.status === "clos");
@@ -95,7 +96,13 @@ function openCard(t, p) {
 }
 
 export async function render(main, ctx) {
-  const mine = await backend.trades({ userId: ctx.me.id, limit: 500 });
+  let mine = await backend.trades({ userId: ctx.me.id, limit: 500 });
+  // Trades d'entraînement : TP / SL touchés depuis le dernier passage du bot enregistrés tout de suite (vraies bougies 5 min).
+  const maj = DEMO ? 0 : await rattraper(backend, ohlc, ctx.me.id, { force: true });
+  if (maj) {
+    mine = await backend.trades({ userId: ctx.me.id, limit: 500 });
+    toast(`${maj} trade${maj > 1 ? "s" : ""} mis à jour avec les vraies bougies Kraken (TP ou SL touchés).`);
+  }
   const open = mine.filter((t) => t.status === "ouvert");
   const done = mine.filter((t) => t.status !== "ouvert");
   main.innerHTML = `

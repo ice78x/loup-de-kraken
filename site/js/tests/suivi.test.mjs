@@ -21,3 +21,24 @@ test("stop avant les objectifs dans la même bougie (prudence), et rien avant le
   assert.equal(d.sl, true);
   assert.deepEqual(d.tps, []);
 });
+
+test("rejouer (mêmes règles que le bot) : TP1, TP2, TP3 → trade clos, résultat et R corrects", async () => {
+  const { rejouer } = await import("../suivi.js");
+  const tr = { ...t, qty: 0.2, qty_remaining: 0.2, eur_per_quote: 0.85, fee_pct: 0.02, realized_pnl_eur: -0.01, risk_eur: 0.74, leverage: 7, liq_price: 255, events: [] };
+  const c5 = []; for (let i = 0; i < 100; i++) { const p = 294 + (13 * i) / 99; c5.push([T(19, 30) + i * 300, p, p + 0.5, p - 0.5, p, 1]); }
+  const { upd, events } = rejouer(tr, c5, { now: Date.parse("2026-10-04T04:05:00Z") });
+  assert.equal(events.length, 3);
+  assert.equal(upd.status, "clos");
+  assert.equal(upd.close_reason, "TP3");
+  assert.ok(Math.abs(upd.realized_pnl_eur - 1.162276) < 1e-5);   // identique au bot (cloud/tracker.py) sur le même cas
+  assert.ok(Math.abs(upd.r_multiple - 1.571) < 1e-3);
+});
+
+test("rejouer : stop touché → clos au stop, bougie pas encore clôturée ignorée", async () => {
+  const { rejouer } = await import("../suivi.js");
+  const tr = { ...t, qty: 1, qty_remaining: 1, eur_per_quote: 1, fee_pct: 0, realized_pnl_eur: 0, risk_eur: 3.96, events: [] };
+  const now = Date.parse("2026-10-03T22:07:00Z");
+  assert.equal(rejouer(tr, [[T(22, 5), 294, 295, 289, 290, 1]], { now }).events.length, 0);   // bougie 22:05 en cours
+  const { upd } = rejouer(tr, [[T(22, 0), 294, 295, 289, 290, 1]], { now });
+  assert.equal(upd.status, "clos"); assert.equal(upd.close_reason, "SL"); assert.ok(Math.abs(upd.r_multiple + 1) < 1e-9);
+});
