@@ -48,13 +48,13 @@ def test_envoi_sans_doublon_ni_jaune(monkeypatch):
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "111, 222")
     sent, c = capture()
     watch = {**ROW, "id": 702, "status": "WATCH", "display": "PF_ETHUSD", "instrument_key": "futures:PF_ETHUSD"}
-    n = notify.notify_trades(FakeSb([{"id": 701, "instrument_key": ROW["instrument_key"], "direction": "LONG"}]), [ROW, watch],
+    n = notify.notify_trades(FakeSb([{"id": 701, "instrument_key": ROW["instrument_key"], "direction": "LONG", "status": "TRADE"}]), [ROW, watch],
                              client=c, now=datetime(2026, 10, 4, tzinfo=timezone.utc))
     assert n == 2 and len(sent) == 2                                  # 1 🟢 × 2 destinataires, le 🟡 ignoré
     assert sent[0].url.path == "/bot123:abc/sendMessage"
     # déjà notifié il y a moins de 4 h (autre signal, même actif, même sens) → pas renvoyé
     sent.clear()
-    assert notify.notify_trades(FakeSb([{"id": 650, "instrument_key": ROW["instrument_key"], "direction": "LONG"}]), [ROW], client=c) == 0
+    assert notify.notify_trades(FakeSb([{"id": 650, "instrument_key": ROW["instrument_key"], "direction": "LONG", "status": "TRADE"}]), [ROW], client=c) == 0
     assert not sent
 
 
@@ -76,3 +76,29 @@ def test_bienvenue_une_seule_fois(monkeypatch):
     assert notify.welcome_once(sb, client=c) is True and len(sent) == 1 and "Notifications activées" in sent[0].content.decode()
     assert sb.rows[0]["key"] == "telegram_bienvenue"
     assert notify.welcome_once(sb, client=c) is False and len(sent) == 1
+
+
+def test_pre_alerte_puis_vert(monkeypatch):
+    """🟡 à qui il ne manque que la confirmation → « ⏳ prépare-toi » ; le 🟢 suivant part quand même ; pas de 2e pré-alerte."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "111")
+    sent, c = capture()
+    prep = {**ROW, "id": 800, "status": "WATCH", "trigger_text": "clôture 15m au-dessus de 150.6", "quality": {"presque_pret": True}}
+    simple = {**ROW, "id": 801, "status": "WATCH", "instrument_key": "futures:PF_ETHUSD", "quality": {"presque_pret": False}}
+    assert notify.notify_trades(FakeSb([]), [prep, simple], client=c) == 1
+    txt = sent[0].content.decode()
+    assert "PRÉPARE-TOI" in txt and "150.6" in txt and "Vérifier maintenant" in txt and "#/signal/800" in txt
+    old_prep = {"id": 800, "instrument_key": ROW["instrument_key"], "direction": "LONG", "status": "WATCH", "quality": {"presque_pret": True}}
+    sent.clear()
+    assert notify.notify_trades(FakeSb([old_prep]), [{**prep, "id": 802}], client=c) == 0           # déjà prévenu
+    assert notify.notify_trades(FakeSb([old_prep]), [{**ROW, "id": 803}], client=c) == 1            # le 🟢 part quand même
+    assert "TRADE VALIDÉ" in sent[0].content.decode()
+
+
+def test_presque_pret_calcule(settings):
+    """Le drapeau n'est levé que si tout est bon sauf la confirmation."""
+    from kraken_assistant.strategies.base import Setup, WATCH
+    st = Setup("k", "X", "crypto", "rejet_sweep", "LONG", 1, 1, 0.9, [1.2], 0.9, "", "", status=WATCH)
+    st.score, st.confirmed = 75, False
+    st.presque_pret = not st.rejections and not st.confirmed and st.score >= settings.score_trade
+    assert st.presque_pret

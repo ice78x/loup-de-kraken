@@ -154,7 +154,8 @@ def _row(st, inst, a, rep, scan_id, status, exp) -> dict:
         # moteur v2
         "grade": st.grade or None, "regime": st.regime or None,
         "quality": {"composantes": st.components, "regime": st.regime_label, "contexte_btc": st.btc_context,
-                    "coupe_circuits": st.kill[:5], "rr_net": st.net_rr, "score_ancien": st.legacy_score},
+                    "coupe_circuits": st.kill[:5], "rr_net": st.net_rr, "score_ancien": st.legacy_score,
+                    "presque_pret": bool(st.presque_pret)},
     }
 
 

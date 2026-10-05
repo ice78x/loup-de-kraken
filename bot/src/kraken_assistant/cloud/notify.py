@@ -94,27 +94,64 @@ def config() -> tuple[str, list[str]] | None:
     return (token, chats) if token and chats else None
 
 
+def heads_up_message(row: dict, site: str = SITE) -> str:
+    """Pré-alerte : setup prouvé et bien noté, il ne manque que la confirmation 15 min. Ce n'est PAS encore un trade."""
+    e = html.escape
+    L = row.get("direction") == "LONG"
+    lignes = [
+        "<b>⏳ PRÉPARE-TOI</b> — pas encore un trade",
+        f"<b>{'LONG ↑' if L else 'SHORT ↓'} {e(_base(row.get('display', '')))}</b>  ({e(row.get('display', ''))})",
+        f"Score {round(float(row.get('score') or 0))}/100" + (f" · {REGIMES.get(row.get('regime'), '')}" if row.get("regime") in REGIMES else ""),
+        "",
+        f"IL MANQUE  {e(row.get('trigger_text') or 'la confirmation 15 min')}",
+        f"ZONE  {_px(row.get('entry_low'))} – {_px(row.get('entry_high'))}",
+        f"SL    {_px(row.get('sl'))}",
+        f"TP1   {_px(row.get('tp1'))}",
+        "",
+        "👉 Prépare Kraken et ouvre le ticket. Quand le site affiche « ✅ Condition remplie », appuie sur « ⚡ Vérifier maintenant » :",
+        f'<a href="{site}/#/signal/{row.get("id")}">Ouvrir le ticket</a>',
+        "<i>N'entre pas avant le message 🟢. Si la condition n'arrive pas, on laisse passer.</i>",
+    ]
+    return "\n".join(lignes)
+
+
+def _presque(r: dict) -> bool:
+    return r.get("status") == "WATCH" and bool((r.get("quality") or {}).get("presque_pret"))
+
+
 def notify_trades(sb, inserted: list[dict], client: httpx.Client | None = None, now: datetime | None = None) -> int:
-    """Envoie un message par nouveau 🟢 (jamais pour un 🟡). Retourne le nombre de messages envoyés."""
+    """Un message par nouveau 🟢, et une pré-alerte « ⏳ prépare-toi » pour un 🟡 à qui il ne manque que la confirmation.
+    Pas de doublon sur 4 h (même actif, même sens) : un 🟢 n'est jamais bloqué par une pré-alerte."""
     cfg = config()
     trades = [r for r in inserted or [] if r.get("status") == "TRADE"]
-    if not cfg or not trades:
+    preps = [r for r in inserted or [] if _presque(r)]
+    if not cfg or not (trades or preps):
         return 0
     token, chats = cfg
     now = now or datetime.now(timezone.utc)
     since = (now - timedelta(hours=4)).isoformat()
-    ids = [r["id"] for r in trades if r.get("id") is not None]
+    ids = {r.get("id") for r in trades + preps}
     try:
-        recent = sb.select("signals", {"select": "id,instrument_key,direction", "status": "eq.TRADE", "created_at": f"gte.{since}"})
+        recent = sb.select("signals", {"select": "id,instrument_key,direction,status,quality", "created_at": f"gte.{since}"}) or []
     except Exception as ex:  # la vérification des doublons ne doit jamais bloquer
         log.warning("doublons Telegram non vérifiés : %s", ex)
         recent = []
-    deja = {(r.get("instrument_key"), r.get("direction")) for r in recent if r.get("id") not in ids}
+    recent = [r for r in recent if r.get("id") not in ids]
+    deja_vert = {(r.get("instrument_key"), r.get("direction")) for r in recent if r.get("status") == "TRADE"}
+    deja_prep = {(r.get("instrument_key"), r.get("direction")) for r in recent if _presque(r)}
     sent = 0
     for r in trades:
-        if (r.get("instrument_key"), r.get("direction")) in deja:
+        k = (r.get("instrument_key"), r.get("direction"))
+        if k in deja_vert:
             continue
+        deja_vert.add(k)
         sent += send(signal_message(r), token, chats, client)
+    for r in preps:
+        k = (r.get("instrument_key"), r.get("direction"))
+        if k in deja_vert or k in deja_prep:
+            continue
+        deja_prep.add(k)
+        sent += send(heads_up_message(r), token, chats, client)
     if sent:
         log.info("Telegram : %d message(s) envoyé(s)", sent)
     return sent

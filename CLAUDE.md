@@ -32,7 +32,8 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
 - **Backtest walk-forward** : `backtest/walkforward.py` (AVANT ancien moteur / APRÈS v2, edges appris seulement sur le passé, frais + glissement),
   `backtest/runner.py` (univers liquide, backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`
   (manuel ou bouton admin du site via `netlify/functions/scan.mjs` mode `backtest`, + dimanche). Résultats affichés par `site/js/backtest.js`.
-- **Telegram** : `cloud/notify.py` envoie un message à chaque nouveau 🟢 (pas de 🟡, pas de doublon sur 4 h) si les secrets GitHub
+- **Telegram** : `cloud/notify.py` envoie un message à chaque nouveau 🟢 et une pré-alerte « ⏳ prépare-toi » pour un 🟡 `presque_pret`
+  (tout est bon sauf la confirmation 15m ; drapeau posé par `finalize`, stocké dans `signals.quality`), sans doublon sur 4 h si les secrets GitHub
   `TELEGRAM_BOT_TOKEN` et `TELEGRAM_CHAT_ID` (plusieurs ids séparés par des virgules) existent. Jamais bloquant, jeton jamais journalisé.
 - `.github/workflows/` : `scan.yml` (horaire), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
 
