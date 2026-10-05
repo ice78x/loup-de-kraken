@@ -33,7 +33,7 @@ export async function render(main, ctx) {
         <li><b>Il regarde BTC et ETH d'abord</b> : un LONG sur une altcoin est bloqué si BTC baisse nettement (et inversement).</li>
         <li><b>Il choisit la stratégie du régime</b> : repli ou cassure dans le sens de la tendance, rejet seulement en range.</li>
         <li><b>Il note chaque setup sur 100</b> avec des règles fixes : régime 20 · alignement des tendances 20 · structure 20 · volume 10 · momentum 10 · news 10 · gain/risque 10.
-          90+ = 🔥 A+, 80+ = 🟢, 70+ = 🟡, en dessous rien n'est affiché.</li>
+          90+ = 🔥 A+, 70+ = 🟢, 60+ = 🟡, en dessous rien n'est affiché (seuils réglables ci-dessous).</li>
         <li><b>Il exige une preuve</b> : pas de 🟢 tant que la stratégie n'a pas gagné, dans ce régime, sur des données qu'elle n'avait pas vues (backtest ci-dessous).</li>
         <li><b>Il élimine</b> le reste : stop trop serré, mouvement déjà parti, frais trop lourds, gain trop faible, série de pertes récente.</li>
         <li><b>Il publie</b> au plus 2 🟢 par scan, et un seul par sens sur les cryptos (elles bougent ensemble).</li>

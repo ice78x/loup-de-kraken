@@ -25,7 +25,7 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   Affiché dans « Mes trades » (🧠 Ce que le bot apprend).
 - **Moteur v2 (04/10)** : `analysis/regime.py` (régime TREND/RANGE/BREAKOUT/HIGH_VOL/CHAOTIC/UNCERTAIN + contexte BTC/ETH `MarketContext`),
   `strategies/quality.py` (score qualité /100 à règles fixes, coupe-circuits `kill_switch`, preuve statistique), appelés par `finalize`.
-  Seuils : ≥ 90 🔥 A+, ≥ 80 🟢, ≥ 70 🟡, sinon non publié. Stratégie autorisée seulement dans son régime (`ALLOWED`).
+  Seuils (`score_trade`/`score_watch`, 05/10) : ≥ 90 🔥 A+, ≥ 70 🟢, ≥ 60 🟡, sinon non publié. Stratégie autorisée seulement dans son régime (`ALLOWED`).
   **Pas de 🟢 sans preuve** (`require_proven_edge`) : combinaison stratégie × famille de régime prouvée dans le dernier backtest
   (`backtest_runs.report.edges`, lu par `v2_inputs` dans `cloud/run.py`). Série de pertes réelle (v2) → stratégie suspendue (`degraded_strategies`).
   Au plus 2 🟢 par scan, 1 par sens sur les cryptos. L'ancien score reste calculé (`legacy_score`) pour la comparaison AVANT/APRÈS.

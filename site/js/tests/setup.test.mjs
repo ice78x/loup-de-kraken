@@ -105,7 +105,7 @@ test("scénario en % de la mise : le levier multiplie gains ET pertes ; liquidat
 });
 
 test("rangement : imminent si dans la zone ou à ≤ 0,5 % ; sinon selon la confiance ; raté/trop tard/expiré à part", () => {
-  const fort = { ...short, score: 82 }, faible = { ...short, score: 70 };
+  const fort = { ...short, score: 82 }, faible = { ...short, score: 65 };   // « plus solides » = 🟢 dès 70 (05/10)
   assert.equal(espace(fort, null), "solide");                         // prix pas encore lu
   assert.equal(espace(faible, null), "fragile");
   assert.equal(espace(faible, phase(faible, 100.5, { now: NOW })), "imminent");   // dans la zone

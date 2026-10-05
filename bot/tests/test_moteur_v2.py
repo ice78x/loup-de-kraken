@@ -120,7 +120,7 @@ def test_preuve_statistique(settings):
 
 
 def test_notes(settings):
-    assert [grade(x, settings) for x in (95, 85, 75, 60)] == ["A+", "A", "B", "C"]
+    assert [grade(x, settings) for x in (95, 85, 72, 65, 50)] == ["A+", "A", "A", "B", "C"]   # 🟢 dès 70, 🟡 dès 60 (05/10)
 
 
 # ------------------------------------------------------------------ dégradation

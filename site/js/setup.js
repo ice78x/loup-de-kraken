@@ -227,7 +227,7 @@ export function scenario(s, lev, maxLev = 10) {
 }
 
 /** Score qualité (moteur v2, /100) à partir duquel un setup est classé « plus solide » = seuil du 🟢. */
-export const SEUIL_SOLIDE = 80;
+export const SEUIL_SOLIDE = 70;   // = seuil du 🟢 (bot_settings.score_trade, test du 05/10)
 /** 🔥 TRADE A+ */
 export const SEUIL_APLUS = 90;
 /** Prix à moins de ce pourcentage de la zone = imminent. */
@@ -255,7 +255,7 @@ const REGIMES = { TREND_UP: "tendance haussière", TREND_DOWN: "tendance baissi�
 
 export function confiance(s) {
   const v = Math.max(0, Math.min(100, Math.round(+s.score || 0)));
-  const mot = v >= SEUIL_APLUS ? "🔥 A+ exceptionnel" : v >= SEUIL_SOLIDE ? "A · fort" : v >= 70 ? "B · moyen" : "faible";
+  const mot = v >= SEUIL_APLUS ? "🔥 A+ exceptionnel" : v >= 80 ? "A · fort" : v >= SEUIL_SOLIDE ? "A · bon" : v >= 60 ? "B · à surveiller" : "faible";
   const comp = s.quality?.composantes || null;
   const regime = s.regime ? REGIMES[s.regime] || s.regime : null;
   const detail = comp ? `<details class="small"><summary>Détail du score</summary><ul>${Object.entries(MAXI).map(([k, m]) =>

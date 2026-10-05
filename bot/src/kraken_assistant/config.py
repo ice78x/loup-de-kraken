@@ -75,8 +75,8 @@ class Settings(BaseSettings):
     max_fee_share_of_risk: float = 0.35
     # --- Moteur v2 (04/10) : score qualité /100 calculé par règles fixes (strategies/quality.py) ---
     # ≥ 90 : 🔥 TRADE A+ · 80–89 : 🟢 · 70–79 : 🟡 surveiller · < 70 : rien n'est publié.
-    score_trade: int = 80
-    score_watch: int = 70
+    score_trade: int = 70   # 05/10 : 70 (rejet/piège prouvé hors échantillon sur les setups ≥ 70 : 34 trades, +0,45R)
+    score_watch: int = 60
     score_exceptional: int = 90
     max_signals_per_scan: int = 2
     max_trades_per_direction_crypto: int = 1   # cryptos très corrélées : 1 seul 🟢 LONG et 1 seul 🟢 SHORT par scan
