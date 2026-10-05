@@ -1,6 +1,8 @@
 # Le bot scanne le marché et met le site à jour.
-# Horaire : toutes les 30 minutes, 24 h / 24 (à hh:05 et hh:35). GitHub peut retarder un lancement de quelques minutes.
-# Dépôt PUBLIC depuis le 05/10 : minutes GitHub Actions illimitées (en privé, 48 scans/jour dépasseraient les 2 000 min gratuites).
+# Horaire : toutes les 15 min, 24 h / 24, lancé par Netlify (netlify/functions/scan-tick.mjs, hh:01/16/31/46),
+# juste après la clôture de chaque bougie 15 min. Le cron ci-dessous n'est qu'un SECOURS (GitHub le retarde souvent
+# de 15 à 20 min) : il ne fait rien si un scan a eu lieu il y a moins de 20 min (backup_should_skip, cloud/run.py).
+# Dépôt PUBLIC depuis le 05/10 : minutes GitHub Actions illimitées (en privé, 96 scans/jour dépasseraient les 2 000 min gratuites).
 # Le bouton "Scanner maintenant" du site déclenche aussi ce workflow.
 name: scan
 
@@ -51,6 +53,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SCAN_MODE: ${{ github.event.inputs.mode || 'normal' }}
           SCAN_SYMBOL: ${{ github.event.inputs.symbol || '' }}
+          SCAN_TRIGGER: ${{ github.event_name }}
           FUTURES_ENABLED: "true"
           USER_AGENT: "loup-de-kraken/1.0 (private club bot)"
         run: python -m kraken_assistant.cloud.run scan

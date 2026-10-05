@@ -1,4 +1,4 @@
-// Ce qui s'est passé sur un trade ouvert DEPUIS le dernier passage du bot (il passe une fois par heure, à hh:05).
+// Ce qui s'est passé sur un trade ouvert DEPUIS le dernier passage du bot (il passe toutes les 15 min).
 // Lu sur les vraies bougies Kraken, mêmes règles que le bot : dans une même bougie, le stop est testé avant les objectifs.
 // Rien n'est enregistré ici : c'est le bot qui l'enregistrera à son prochain passage.
 

@@ -30,6 +30,8 @@ class FakePostgrest:
                 return False
             if op == "lt" and not (str(cur) < val):
                 return False
+            if op == "neq" and str(cur).lower() == val.lower():
+                return False
         return True
 
     def handler(self, req: httpx.Request) -> httpx.Response:
@@ -253,3 +255,19 @@ def test_tracker_sans_stop_sans_levier_jamais_liquide():
     t = _trade(sl=None, liq_price=None, leverage=1)
     upd, _ = advance_trade(t, bars([(100, 100, 50, 60)]))
     assert "status" not in upd and upd["qty_remaining"] == pytest.approx(1.0)
+
+
+def test_cron_github_de_secours_ne_double_pas_le_scan():
+    """Horloge principale = Netlify toutes les 15 min ; le cron GitHub (souvent en retard) ne scanne que si rien depuis 20 min."""
+    pg = FakePostgrest()
+    sb = Supabase("https://x.supabase.co", "service", transport=httpx.MockTransport(pg.handler))
+    now = datetime(2026, 10, 6, 10, 0, tzinfo=timezone.utc)
+    assert cloud.backup_should_skip(sb, "schedule", now) is False            # aucun scan : le secours travaille
+    pg.tables["scans"] = [{"id": 1, "mode": "normal", "created_at": "2026-10-06T09:50:00+00:00"}]
+    assert cloud.backup_should_skip(sb, "schedule", now) is True             # scan il y a 10 min : rien à faire
+    assert cloud.backup_should_skip(sb, "workflow_dispatch", now) is False   # Netlify / bouton : toujours exécuté
+    assert cloud.backup_should_skip(sb, "", now) is False
+    pg.tables["scans"] = [{"id": 1, "mode": "cible", "created_at": "2026-10-06T09:55:00+00:00"}]
+    assert cloud.backup_should_skip(sb, "schedule", now) is False            # une vérif d'une seule paire ne compte pas
+    pg.tables["scans"] = [{"id": 1, "mode": "normal", "created_at": "2026-10-06T09:30:00Z"}]
+    assert cloud.backup_should_skip(sb, "schedule", now) is False            # 30 min sans scan : Netlify a raté, on scanne

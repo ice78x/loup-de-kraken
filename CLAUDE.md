@@ -13,7 +13,7 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   - `css/app.css` : jetons de design dans `:root` (bleu abyssal + ambre ; vert/rouge réservés gains/pertes et LONG/SHORT).
   - Pages clés : `views/home.js` (accueil + cartes setup de `setup.js`, mises à jour par `live.js`), `views/markets.js` (Graphiques : liste en onglets),
     `views/chart.js` (graphique d'une paire, indicateurs de `indicators.js`), `views/tradeform.js` (formulaire de trade, quantité + levier).
-- `netlify/functions/` : `market.mjs` (proxy des prix publics Kraken), `scan.mjs` (déclenche le workflow GitHub `scan`).
+- `netlify/functions/` : `market.mjs` (proxy des prix publics Kraken), `scan.mjs` (bouton : déclenche le workflow GitHub `scan`), `scan-tick.mjs` (fonction planifiée : scan toutes les 15 min).
 - `supabase/schema.sql` : schéma + RLS. **Idempotent** (relançable) : utiliser `create ... if not exists`, `alter table ... add column if not exists`,
   `create or replace`. Les politiques RLS sont recréées à chaque exécution.
 - `bot/` : bot Python (scanner, stratégies, risque, backtest/optimiseur). `bot/src/kraken_assistant/cloud/run.py` = point d'entrée GitHub Actions
@@ -36,7 +36,7 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   (tout est bon sauf la confirmation 15m ; drapeau posé par `finalize`, stocké dans `signals.quality`), sans doublon sur 4 h (secret GitHub `TELEGRAM_BOT_TOKEN` ;
   `TELEGRAM_CHAT_ID` facultatif). Abonnement automatique : qui écrit au bot est inscrit au scan suivant (`poll_subscribers`, table
   `telegram_subscribers`, position dans `bot_settings.telegram_offset`), « /stop » désabonne, bot bloqué → désabonné. Jamais bloquant, jeton jamais journalisé.
-- `.github/workflows/` : `scan.yml` (toutes les 30 min, hh:05 et hh:35 ; dépôt public = minutes illimitées), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
+- `.github/workflows/` : `scan.yml` (toutes les 15 min, lancé par `netlify/functions/scan-tick.mjs` à hh:01/16/31/46 juste après la clôture 15m ; cron GitHub hh:05/35 = secours seulement, sauté si scan < 20 min, `backup_should_skip` ; dépôt public = minutes illimitées), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
 
 ## Règles NON négociables
 1. **Ne jamais inventer** un prix, une news, un volume, une disponibilité Kraken, une position ou un résultat. Donnée absente → le dire

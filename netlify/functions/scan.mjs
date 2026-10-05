@@ -12,7 +12,7 @@ export default async (req) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, GH_TOKEN, GH_REPO } = process.env;
   const branch = process.env.GH_BRANCH || "main";
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !GH_TOKEN || !GH_REPO) {
-    return json({ error: "Le bouton de scan n'est pas encore configuré (variables Netlify manquantes). Le bot scanne quand même toutes les heures." }, 503);
+    return json({ error: "Le bouton de scan n'est pas encore configuré (variables Netlify manquantes). Le bot scanne quand même tout seul." }, 503);
   }
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return json({ error: "Connecte-toi d'abord." }, 401);

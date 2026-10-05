@@ -90,3 +90,18 @@ test("bouton BACKTEST : admin seulement, 1 par heure, workflow backtest.yml avec
   last = [{ created_at: new Date(Date.now() - 20 * 60000).toISOString(), mode: "backtest" }];
   assert.equal((await scan(bt({ mode: "backtest" }))).status, 429);
 });
+
+test("horloge des scans (toutes les 15 min) : déclenche GitHub, et ne plante pas sans configuration", async () => {
+  const { default: tick, config } = await import("../functions/scan-tick.mjs");
+  assert.equal(config.schedule, "1,16,31,46 * * * *");
+  delete process.env.GH_TOKEN;
+  assert.equal((await tick()).status, 503);
+  Object.assign(process.env, { GH_TOKEN: "gh", GH_REPO: "moi/loup" });
+  let sent;
+  globalThis.fetch = async (url, init) => { sent = { url: String(url), body: JSON.parse(init.body) }; return new Response(null, { status: 204 }); };
+  assert.equal((await tick()).status, 200);
+  assert.match(sent.url, /moi\/loup\/actions\/workflows\/scan\.yml\/dispatches/);
+  assert.deepEqual(sent.body, { ref: "main", inputs: { mode: "normal" } });
+  globalThis.fetch = async () => new Response("bad", { status: 401 });
+  assert.equal((await tick()).status, 502);
+});

@@ -2,7 +2,7 @@
 
 Le site privé de ton club de trading :
 
-- **le bot** analyse Kraken toutes les heures et publie ses trades 🟢 / 🟡 / 🛑 ;
+- **le bot** analyse Kraken toutes les 15 minutes et publie ses trades 🟢 / 🟡 / 🛑 ;
 - **chaque membre** a son compte et son solde, et enregistre ses trades : ceux du bot, ou les siens (choix de l'entrée, du SL, des TP et du multiplicateur) ;
 - **tout le club** voit l'historique et le classement ;
 - **chaque membre** peut envoyer ses idées d'amélioration à l'admin (seul l'admin règle le bot) ;
@@ -98,7 +98,7 @@ Tu vas créer 3 comptes gratuits. Le plus simple : crée d'abord le compte GitHu
 5. Attends 2 à 4 minutes. La ligne doit devenir **verte ✅**.
    - En cas de croix rouge ❌ : clique dessus et envoie-moi le texte rouge.
 
-Ensuite, le bot tourne **tout seul toutes les heures, 24 h / 24**. Il optimise ses réglages **chaque dimanche**.
+Ensuite, le bot tourne **tout seul toutes les 15 minutes, 24 h / 24**. Il optimise ses réglages **chaque dimanche**.
 
 ### Étape 5 : mettre le site en ligne (Netlify)
 
@@ -110,7 +110,7 @@ Ensuite, le bot tourne **tout seul toutes les heures, 24 h / 24**. Il optimise s
 
 ### Étape 6 : activer le bouton « Scanner maintenant » (facultatif mais pratique)
 
-Sans cette étape, le site marche quand même : le bot scanne tout seul toutes les heures.
+Sans cette étape, le site marche quand même : le bot scanne tout seul (toutes les 15 min avec Netlify, sinon toutes les 30 min environ).
 
 1. **Crée un jeton GitHub :**
    1. Sur GitHub : ta photo → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.

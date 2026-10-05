@@ -32,15 +32,15 @@ export function ago(iso) {
 export const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "—");
 export const dt = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
 
-/** Prochain scan automatique : toutes les 30 min à hh:05 et hh:35, 24 h / 24 (heure de Paris ; GitHub peut le retarder). */
+/** Prochain scan automatique : toutes les 15 min (hh:01, 16, 31, 46), juste après la clôture d'une bougie 15 min. */
 export function nextScan(now = new Date()) {
   const paris = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
   const next = new Date(paris);
   next.setSeconds(0, 0);
   const m = paris.getMinutes();
-  if (m < 5) next.setMinutes(5);
-  else if (m < 35) next.setMinutes(35);
-  else { next.setHours(next.getHours() + 1); next.setMinutes(5); }
+  const slot = [1, 16, 31, 46].find((x) => m < x);
+  if (slot != null) next.setMinutes(slot);
+  else { next.setHours(next.getHours() + 1); next.setMinutes(1); }
   return next.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 

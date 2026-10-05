@@ -328,8 +328,36 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+BACKUP_GAP_MIN = 20
+
+
+def minutes_since_last_scan(sb: Supabase, now: datetime | None = None) -> float | None:
+    """Minutes écoulées depuis le dernier scan publié (None si aucun ou illisible)."""
+    try:
+        rows = sb.select("scans", {"select": "created_at", "mode": "neq.cible",
+                                     "order": "created_at.desc", "limit": "1"})
+    except SupabaseError:
+        return None
+    if not rows or not rows[0].get("created_at"):
+        return None
+    last = datetime.fromisoformat(str(rows[0]["created_at"]).replace("Z", "+00:00"))
+    return ((now or datetime.now(timezone.utc)) - last).total_seconds() / 60
+
+
+def backup_should_skip(sb: Supabase, trigger: str, now: datetime | None = None) -> bool:
+    """Le cron GitHub n'est qu'un SECOURS : l'horloge principale est Netlify (scan-tick, toutes les 15 min).
+    Si un scan a eu lieu il y a moins de BACKUP_GAP_MIN minutes, le secours ne fait rien (pas de doublon)."""
+    if trigger != "schedule":
+        return False
+    gap = minutes_since_last_scan(sb, now)
+    return gap is not None and gap < BACKUP_GAP_MIN
+
+
 def _main(cmd: str) -> int:
     sb = Supabase(os.environ.get("SUPABASE_URL", ""), os.environ.get("SUPABASE_SERVICE_KEY", ""))
+    if cmd == "scan" and backup_should_skip(sb, os.environ.get("SCAN_TRIGGER", "")):
+        log.info("scan de secours inutile : un scan a eu lieu il y a moins de %d min", BACKUP_GAP_MIN)
+        return 0
     app = build(sb)
     cible = (os.environ.get("SCAN_SYMBOL") or "").strip()
     if cmd == "scan" and cible:
