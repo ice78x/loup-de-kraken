@@ -168,7 +168,8 @@ def test_walk_forward_n_utilise_que_le_passe(settings):
     s = settings.model_copy(update={"edge_min_trades": 5})
     rep = walk_forward_v2(cands, arrays, s, BTParams(fee_pct=0.05, maker_fee_pct=0.02), folds=5)
     assert rep["avant"]["trades"] > rep["apres"]["trades"] > 0
-    assert set(rep["apres"]["par_strategie"]) == {"A"}                 # B, perdante sur le passé, n'est jamais jouée
+    assert set(rep["apres"]["par_strategie"]) == {"A"}
+    assert set(rep["apres_seuil_70"]["par_strategie"]) == {"A"}                 # variante 70/100 : mêmes combinaisons prouvées                 # B, perdante sur le passé, n'est jamais jouée
     assert rep["apres"]["expectancy_r"] > 0 > rep["avant"]["expectancy_r"] or rep["avant"]["expectancy_r"] < rep["apres"]["expectancy_r"]
     assert rep["edges"][edge_key("A", R.RANGE)]["prouve"] and not rep["edges"][edge_key("B", R.RANGE)]["prouve"]
     assert rep["folds"][0]["combinaisons_prouvees"] == [edge_key("A", R.RANGE)]

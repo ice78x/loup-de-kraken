@@ -85,6 +85,7 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
     avant: list[BTTrade] = []
     apres: list[BTTrade] = []
     sans_preuve: list[BTTrade] = []
+    seuil70: list[BTTrade] = []      # variante : combinaisons prouvées dès 70/100 (la population sur laquelle la preuve est mesurée)
     oos_by_key: dict[str, list[float]] = {}
     fold_rows = []
     for k in range(1, folds):
@@ -94,13 +95,17 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         fa = evaluate_rule(cands, arrays, p_old, old_rule, start, end)
         fn = evaluate_rule(cands, arrays, p_new, lambda c: v2_rule(c) and edge_key(c.strategy, c.regime) in allowed, start, end)
         fs = evaluate_rule(cands, arrays, p_new, v2_rule, start, end)
+        f70 = evaluate_rule(cands, arrays, p_new, lambda c: not c.kill and c.quality >= s.score_watch
+                            and edge_key(c.strategy, c.regime) in allowed, start, end)
+        seuil70 += f70
         avant += fa
         apres += fn
         sans_preuve += fs
         for t in fn:
             oos_by_key.setdefault(edge_key(t.strategy, t.regime), []).append(t.r)
         fold_rows.append({"debut": f"{start:%Y-%m-%d}", "fin": f"{end:%Y-%m-%d}", "combinaisons_prouvees": sorted(allowed),
-                          "avant": _short(fa), "apres": _short(fn), "apres_sans_preuve": _short(fs)})
+                          "avant": _short(fa), "apres": _short(fn), "apres_sans_preuve": _short(fs),
+                          "apres_seuil_70": _short(f70)})
     final = edge_table(_edge_trades(cands, arrays, p, s))
     for key, e in final.items():
         rs = oos_by_key.get(key, [])
@@ -113,6 +118,7 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         "tranches": folds, "candidats": len(cands),
         "avant": metrics(avant, period=period), "apres": metrics(apres, period=period),
         "apres_sans_preuve": metrics(sans_preuve, period=period),
+        "apres_seuil_70": metrics(seuil70, period=period),
         "folds": fold_rows, "edges": final,
         "regles": {"avant": f"ancien score ≥ {LEGACY_THRESHOLD}, filtres durs, confirmé",
                    "apres": f"qualité ≥ {s.score_trade}/100, aucun coupe-circuit (régime, BTC, conflit 4h/1h, R:R net ≥ "
