@@ -369,6 +369,17 @@ create table if not exists public.backtest_runs (
 );
 create index if not exists backtest_runs_created_idx on public.backtest_runs (created_at desc);
 
+-- Abonnés Telegram : toute personne (ou groupe) qui écrit au bot est inscrite par le bot (clé secrète), « /stop » désabonne.
+-- Lisible par l'admin seulement (noms Telegram des membres) ; écrit uniquement par le bot.
+create table if not exists public.telegram_subscribers (
+  chat_id    text primary key,
+  name       text,
+  kind       text,               -- private | group | supergroup | channel
+  active     boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Résultats RÉELS des signaux du bot (rejoués sur les vraies bougies Kraken) : la mémoire du bot pour s'améliorer.
 -- Gardés sans limite (les signaux eux-mêmes sont effacés après 60 jours).
 create table if not exists public.signal_outcomes (
@@ -435,6 +446,7 @@ alter table public.idea_votes      enable row level security;
 alter table public.scan_requests   enable row level security;
 alter table public.signal_outcomes enable row level security;
 alter table public.backtest_runs   enable row level security;
+alter table public.telegram_subscribers enable row level security;
 
 do $$
 declare r record;
@@ -462,6 +474,7 @@ create policy "lecture instruments" on public.instruments for select using (publ
 create policy "lecture edges" on public.bot_edges for select using (public.is_approved());
 create policy "lecture résultats signaux" on public.signal_outcomes for select using (public.is_approved());
 create policy "lecture backtests" on public.backtest_runs for select using (public.is_approved());
+create policy "admin voit les abonnés Telegram" on public.telegram_subscribers for select using (public.is_admin());
 
 -- Trades : tout le club voit l'historique, chacun ne modifie que les siens
 create policy "lecture trades du club" on public.trades for select using (public.is_approved());

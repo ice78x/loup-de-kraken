@@ -53,7 +53,7 @@ export async function render(main, ctx) {
 
     <section class="section"><h2>Réglages du bot</h2>
       <p class="muted">Seul un admin peut les changer. Chaque changement est noté ci-dessous et s'applique au scan suivant. Les limites de sécurité ne peuvent pas être dépassées.</p>
-      <div class="grille">${settings.map(settingCard).join("")}</div>
+      <div class="grille">${settings.filter((s) => !String(s.key).startsWith("telegram_")).map(settingCard).join("")}</div>
       <details style="margin-top:16px"><summary>Derniers changements</summary><ul>${log.map((l) => `<li class="small">${dt(l.created_at)} · <b>${esc(l.profiles?.pseudo || "bot")}</b> :
         ${esc(l.key)} ${esc(JSON.stringify(l.old_value))} → ${esc(JSON.stringify(l.new_value))}</li>`).join("") || "<li>Aucun</li>"}</ul></details></section>
 

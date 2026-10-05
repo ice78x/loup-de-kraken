@@ -170,7 +170,8 @@ def push_scan(sb: Supabase, rep, tr=None) -> int:
         "news": [news_row(n, tr, translate=i < 10) for i, n in enumerate(rep.news)],
         "data_issues": rep.data_issues[:30], "duration_s": rep.duration_s})[0]
     try:
-        from .notify import welcome_once
+        from .notify import poll_subscribers, welcome_once
+        poll_subscribers(sb)   # nouveaux abonnés Telegram (« Démarrer » sur le bot) avant d'envoyer les signaux
         welcome_once(sb)
     except Exception as e:  # noqa: BLE001 — jamais bloquant
         log.warning("bienvenue Telegram non envoyée : %s", type(e).__name__)

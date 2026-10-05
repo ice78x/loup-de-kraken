@@ -102,3 +102,76 @@ def test_presque_pret_calcule(settings):
     st.score, st.confirmed = 75, False
     st.presque_pret = not st.rejections and not st.confirmed and st.score >= settings.score_trade
     assert st.presque_pret
+
+
+class MemSb:
+    """Mini Supabase en mémoire : bot_settings, signals, telegram_subscribers."""
+    def __init__(self):
+        self.t = {"bot_settings": [], "signals": [], "telegram_subscribers": []}
+
+    def select(self, table, params=None):
+        rows = self.t[table]
+        p = params or {}
+        if "key" in p:
+            rows = [r for r in rows if r.get("key") == p["key"][3:]]
+        if p.get("active") == "eq.true":
+            rows = [r for r in rows if r.get("active")]
+        return [dict(r) for r in rows]
+
+    def upsert(self, table, rows, key):
+        k = key.split(",")[0]
+        for r in rows:
+            cur = next((x for x in self.t[table] if x.get(k) == r[k]), None)
+            if cur:
+                cur.update(r)
+            else:
+                self.t[table].append(dict(r))
+
+    def update(self, table, filters, data):
+        k, v = next(iter(filters.items()))
+        for r in self.t[table]:
+            if str(r.get(k)) == v[3:]:
+                r.update(data)
+
+
+def telegram(updates, blocked=()):
+    sent = []
+
+    def handler(req):
+        if req.url.path.endswith("/getUpdates"):
+            return httpx.Response(200, json={"ok": True, "result": updates})
+        import json as _j
+        body = _j.loads(req.content)
+        sent.append(body)
+        if str(body["chat_id"]) in blocked:
+            return httpx.Response(403, json={"ok": False, "description": "Forbidden: bot was blocked by the user"})
+        return httpx.Response(200, json={"ok": True})
+    return sent, httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_abonnement_automatique_puis_stop(monkeypatch):
+    """« Démarrer » sur le bot = abonné (bienvenue), « /stop » = désabonné ; la position de lecture avance."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    sb = MemSb()
+    ups = [{"update_id": 10, "message": {"chat": {"id": 555, "type": "private", "first_name": "Nora"}, "text": "/start"}},
+           {"update_id": 11, "message": {"chat": {"id": -100777, "type": "group", "title": "Club"}, "text": "salut"}}]
+    sent, c = telegram(ups)
+    assert notify.poll_subscribers(sb, c) == {"nouveaux": 2, "partis": 0}
+    assert {s["chat_id"] for s in sent} == {"555", "-100777"} and "Bienvenue" in sent[0]["text"]
+    assert sb.select("bot_settings", {"key": "eq.telegram_offset"})[0]["value"] == 12
+    assert sorted(notify.recipients(sb)) == ["-100777", "555"]
+    sent, c = telegram([{"update_id": 12, "message": {"chat": {"id": 555, "type": "private"}, "text": "/stop"}}])
+    assert notify.poll_subscribers(sb, c) == {"nouveaux": 0, "partis": 1}
+    assert notify.recipients(sb) == ["-100777"]
+
+
+def test_signal_envoye_aux_abonnes_et_bloques_retires(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "111")
+    sb = MemSb()
+    sb.t["telegram_subscribers"] = [{"chat_id": "555", "active": True}, {"chat_id": "666", "active": True}, {"chat_id": "777", "active": False}]
+    sent, c = telegram([], blocked={"666"})
+    n = notify.notify_trades(sb, [ROW], client=c)
+    assert n == 2 and {s["chat_id"] for s in sent} == {"111", "555", "666"}           # 777 désabonné : rien
+    assert next(r for r in sb.t["telegram_subscribers"] if r["chat_id"] == "666")["active"] is False   # a bloqué le bot
