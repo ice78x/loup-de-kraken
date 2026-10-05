@@ -1,12 +1,12 @@
 # Le bot scanne le marché et met le site à jour.
-# Horaire : toutes les heures, 24 h / 24 (à hh:05).
-# ≈ 24 scans/jour ≈ 2 100 minutes/mois : au-delà des 2 000 minutes gratuites d'un dépôt PRIVÉ (illimité si le dépôt est public).
+# Horaire : toutes les 30 minutes, 24 h / 24 (à hh:05 et hh:35). GitHub peut retarder un lancement de quelques minutes.
+# Dépôt PUBLIC depuis le 05/10 : minutes GitHub Actions illimitées (en privé, 48 scans/jour dépasseraient les 2 000 min gratuites).
 # Le bouton "Scanner maintenant" du site déclenche aussi ce workflow.
 name: scan
 
 on:
   schedule:
-    - cron: "5 * * * *"
+    - cron: "5,35 * * * *"
   workflow_dispatch:
     inputs:
       mode:

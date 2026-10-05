@@ -35,7 +35,7 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
 - **Telegram** : `cloud/notify.py` envoie un message à chaque nouveau 🟢 et une pré-alerte « ⏳ prépare-toi » pour un 🟡 `presque_pret`
   (tout est bon sauf la confirmation 15m ; drapeau posé par `finalize`, stocké dans `signals.quality`), sans doublon sur 4 h si les secrets GitHub
   `TELEGRAM_BOT_TOKEN` et `TELEGRAM_CHAT_ID` (plusieurs ids séparés par des virgules) existent. Jamais bloquant, jeton jamais journalisé.
-- `.github/workflows/` : `scan.yml` (horaire), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
+- `.github/workflows/` : `scan.yml` (toutes les 30 min, hh:05 et hh:35 ; dépôt public = minutes illimitées), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
 
 ## Règles NON négociables
 1. **Ne jamais inventer** un prix, une news, un volume, une disponibilité Kraken, une position ou un résultat. Donnée absente → le dire
