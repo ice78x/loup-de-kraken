@@ -52,6 +52,7 @@ class Setup:
     kill: list[str] = field(default_factory=list)   # coupe-circuits v2 (interdisent le 🟢)
     net_rr: list[float] = field(default_factory=list)
     presque_pret: bool = False      # tout est bon (score, preuve, filtres) sauf la confirmation 15m → pré-alerte Telegram
+    stale: bool = False             # signal trop ancien : ne pourra plus jamais être confirmé (pas de pré-alerte)
 
     @property
     def sizing_entry(self) -> float:
@@ -248,7 +249,7 @@ def finalize(st: Setup, a: MarketAnalysis, s: Settings, check_edge: bool = True)
     aligned_major = a.catalyst.has_major and a.catalyst.points.get(st.direction, 0) >= 8
     st.exceptional = st.score >= s.score_exceptional and aligned_major
     # Il ne manque QUE la confirmation (clôture 15m / retest) : le membre peut se préparer.
-    st.presque_pret = not st.rejections and not st.confirmed and st.score >= s.score_trade
+    st.presque_pret = not st.rejections and not st.confirmed and not st.stale and st.score >= s.score_trade
     if st.rejections or not st.confirmed:
         st.status = WATCH
     elif st.score >= s.score_trade:

@@ -101,6 +101,11 @@ export function phase(s, price, { candles = [], now = Date.now() } = {}) {
     return { code: "parti", ton: "", icone: "🏃", titre: "TP1 touché sans nous", tp: 1,
       texte: "Le prix a déjà atteint l'objectif 1 sans confirmation d'entrée. On ne court jamais après un mouvement." };
   }
+  if (watch && s.quality?.perime) {
+    // Le piège qui a créé ce setup date de plus d'1 h : le bot ne le validera plus, même si le prix revient dans la zone.
+    return { code: "perime", ton: "", icone: "⌛", titre: "Trop tard pour ce setup",
+      texte: "Le signal date de plus d'une heure : le bot ne le validera plus. N'entre pas dessus. Attends un nouveau signal." };
+  }
   if (price >= lo && price <= hi) {
     if (!watch) {
       return { code: "go", ton: "long", icone: "✅", titre: "C'est le moment",

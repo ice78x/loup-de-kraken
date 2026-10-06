@@ -188,3 +188,12 @@ test("XAUT du 04/10 : stop 14 $ au-dessus, TP1 à 1,5 $ (R:R 0,1) → « Refusé
   assert.equal(ph.code, "refuse");
   assert.equal(espace(s, ph), "fini");
 });
+test("06/10 (TAO) : piège de plus d'1 h → « Trop tard », jamais « attends la clôture » ni « vérifier maintenant »", () => {
+  const perime = { ...short, quality: { perime: true }, trigger_text: "un nouveau rejet : celui-ci date de 75 min (1 h max), le bot ne le validera plus" };
+  for (const candles of [[k(99), k(100.5)], [k(100.4), k(100.5)]]) {
+    const p = phase(perime, 100.5, { now: NOW, candles });
+    assert.equal(p.code, "perime");
+    assert.doesNotMatch(p.texte, /Attends la clôture/);
+  }
+  assert.equal(phase(perime, 103.2, { now: NOW }).code, "stop");                // le stop reste prioritaire
+});

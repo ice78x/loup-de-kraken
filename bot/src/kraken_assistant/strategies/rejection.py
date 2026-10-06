@@ -10,6 +10,9 @@ from .base import ACTION_ENTER, ACTION_WAIT_CLOSE, ACTION_WAIT_RETEST, Setup, bu
 NAME = "rejet_sweep"
 
 
+MAX_SIGNAL_AGE_BARS = 4   # un rejet/piège n'est validé que dans l'heure qui suit (4 bougies 15m)
+
+
 def find(a: MarketAnalysis, s: Settings) -> list[Setup]:
     out: list[Setup] = []
     atr15, price = a.atr15, a.price
@@ -39,7 +42,9 @@ def find(a: MarketAnalysis, s: Settings) -> list[Setup]:
                 action = ACTION_WAIT_RETEST
             else:
                 action = ACTION_WAIT_CLOSE
-            confirmed = (not ev.needs_close_confirmation) and action != ACTION_WAIT_CLOSE and (ev.bars_since_signal or 0) <= 4
+            age = ev.bars_since_signal or 0
+            stale = age > MAX_SIGNAL_AGE_BARS     # le piège date de plus d'1 h : il ne sera plus jamais confirmé
+            confirmed = (not ev.needs_close_confirmation) and action != ACTION_WAIT_CLOSE and not stale
             st = Setup(
                 inst_key=a.inst.key, display=a.inst.display, asset_class=a.inst.asset_class, strategy=NAME,
                 direction=direction, entry_low=lo, entry_high=hi, sl=sl, tps=tps, invalidation_price=L,
@@ -51,9 +56,16 @@ def find(a: MarketAnalysis, s: Settings) -> list[Setup]:
             )
             if obstacle is not None:
                 st.warnings.append(f"niveau gênant proche ({obstacle:.1f}R)")
+            st.stale = stale and not ev.needs_close_confirmation
             if not confirmed:
-                st.trigger = (f"clôture 15m {'au-dessus' if sign > 0 else 'sous'} {L:.6g} confirmant le rejet"
-                              if ev.needs_close_confirmation else f"retour dans la zone {lo:.6g}–{hi:.6g}")
+                if ev.needs_close_confirmation:
+                    st.trigger = f"clôture 15m {'au-dessus' if sign > 0 else 'sous'} {L:.6g} confirmant le rejet"
+                elif st.stale:
+                    # 06/10 (TAO) : avant, le texte disait « retour dans la zone » alors que le prix y était déjà.
+                    st.trigger = (f"un nouveau rejet : celui-ci date de {age * 15} min (1 h max), "
+                                  "le bot ne le validera plus")
+                else:
+                    st.trigger = f"retour dans la zone {lo:.6g}–{hi:.6g}"
             conf = {bo.SWEEP: 12, bo.FAKE_BREAKOUT: 12, bo.REJECTION: 10}[ev.state]
             if ev.needs_close_confirmation:
                 conf = 3

@@ -35,7 +35,8 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   `backtest/runner.py` (univers liquide, backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`
   (manuel ou bouton admin du site via `netlify/functions/scan.mjs` mode `backtest`, + dimanche). Résultats affichés par `site/js/backtest.js`.
 - **Telegram** : `cloud/notify.py` envoie un message à chaque nouveau 🟢 et une pré-alerte « ⏳ prépare-toi » pour un 🟡 `presque_pret`
-  (tout est bon sauf la confirmation 15m ; drapeau posé par `finalize`, stocké dans `signals.quality`), sans doublon sur 4 h (secret GitHub `TELEGRAM_BOT_TOKEN` ;
+  (tout est bon sauf la confirmation 15m ; drapeau posé par `finalize`, stocké dans `signals.quality` ; jamais pour un setup `stale` :
+  rejet/piège de plus d'1 h (`MAX_SIGNAL_AGE_BARS`), qui ne sera plus jamais confirmé → `quality.perime`, carte « ⌛ Trop tard » sur le site), sans doublon sur 4 h (secret GitHub `TELEGRAM_BOT_TOKEN` ;
   `TELEGRAM_CHAT_ID` facultatif). Abonnement automatique : qui écrit au bot est inscrit au scan suivant (`poll_subscribers`, table
   `telegram_subscribers`, position dans `bot_settings.telegram_offset`), « /stop » désabonne, bot bloqué → désabonné. Jamais bloquant, jeton jamais journalisé.
 - `.github/workflows/` : `scan.yml` (toutes les 15 min, lancé par `netlify/functions/scan-tick.mjs` à hh:01/16/31/46 juste après la clôture 15m ; cron GitHub hh:05/35 = secours seulement, sauté si scan < 20 min, `backup_should_skip` ; dépôt public = minutes illimitées), `backtest.yml` (dimanche + manuel), `optimize.yml` (ancien, dimanche), `tests.yml` (à chaque push).
