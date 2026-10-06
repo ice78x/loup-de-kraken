@@ -27,7 +27,8 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   `strategies/quality.py` (score qualité /100 à règles fixes, coupe-circuits `kill_switch`, preuve statistique), appelés par `finalize`.
   Seuils (`score_trade`/`score_watch`, 05/10) : ≥ 90 🔥 A+, ≥ 70 🟢, ≥ 60 🟡, sinon non publié. Stratégie autorisée seulement dans son régime (`ALLOWED`).
   **Pas de 🟢 sans preuve** (`require_proven_edge`) : combinaison stratégie × famille de régime prouvée dans le dernier backtest
-  (`backtest_runs.report.edges`, lu par `v2_inputs` dans `cloud/run.py`). Série de pertes réelle (v2) → stratégie suspendue (`degraded_strategies`).
+  (`backtest_runs.report.edges`, lu par `v2_inputs` dans `cloud/run.py`), mesurée sur les setups qualité ≥ `score_trade` (ceux qu'on jouerait).
+  Pause après stop (`cooldown_after_stop_h`, 0 = coupée : backtest du 06/10 neutre à 6 h, pire à 24 h). Série de pertes réelle (v2) → stratégie suspendue (`degraded_strategies`).
   Au plus 2 🟢 par scan, 1 par sens sur les cryptos. L'ancien score reste calculé (`legacy_score`) pour la comparaison AVANT/APRÈS.
 - **Backtest walk-forward** : `backtest/walkforward.py` (AVANT ancien moteur / APRÈS v2, edges appris seulement sur le passé, frais + glissement),
   `backtest/runner.py` (univers liquide, backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`

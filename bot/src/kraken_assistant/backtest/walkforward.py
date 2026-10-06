@@ -25,14 +25,16 @@ LEGACY_THRESHOLD = 60
 
 def _edge_trades(cands: list[Candidate], arrays: dict[str, Arrays], p: BTParams, s: Settings,
                  start=None, end=None, skip=None) -> list[tuple[str, float]]:
-    """Base d'apprentissage des edges : tous les candidats v2 sans coupe-circuit et de qualité ≥ seuil 🟡,
-    simulés un par un (sans contrainte de portefeuille, pour mesurer la stratégie elle-même)."""
+    """Base d'apprentissage des edges : tous les candidats v2 sans coupe-circuit et de qualité ≥ seuil 🟢 (ceux qui
+    peuvent réellement être joués), simulés un par un (sans contrainte de portefeuille, pour mesurer la stratégie).
+    06/10 : c'était « ≥ seuil 🟡 » ; quand le 🟡 est passé de 70 à 60 (05/10), la preuve s'est mise à inclure
+    les setups 60-69, jamais jouables en 🟢 et perdants (rejet_sweep|RANGE : +0,38R sur ≥ 70 → −0,02R sur ≥ 60)."""
     out = []
     seen: dict[str, pd.Timestamp] = {}
     for cd in sorted(cands, key=lambda c: c.ts):
         if (start is not None and cd.ts < start) or (end is not None and cd.ts >= end):
             continue
-        if cd.kill or cd.quality < s.score_watch:
+        if cd.kill or cd.quality < s.score_trade:
             continue
         if skip is not None and skip(cd):
             continue
@@ -113,7 +115,7 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
     avant: list[BTTrade] = []
     apres: list[BTTrade] = []
     sans_preuve: list[BTTrade] = []
-    seuil70: list[BTTrade] = []      # variante : combinaisons prouvées dès 70/100 (la population sur laquelle la preuve est mesurée)
+    seuil70: list[BTTrade] = []      # variante : combinaisons prouvées jouées dès le seuil 🟡 (clé historique « seuil_70 »)
     stops = stop_events(cands, arrays, p, s)
     pause: dict[int, list[BTTrade]] = {h: [] for h in COOLDOWNS_H}   # variante : APRÈS + pause après un stop récent
     oos_by_key: dict[str, list[float]] = {}

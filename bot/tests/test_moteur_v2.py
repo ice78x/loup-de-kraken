@@ -254,3 +254,15 @@ def test_walk_forward_mesure_la_pause(settings):
     et = rep["etude_pause_stop"]
     # B (stoppé) alterne avec A toutes les 15 h : la pause de 24 h retire des A placés juste après un stop de B
     assert et["sans_pause"]["n"] > et["pause_24h"]["n"] and et["pause_6h"]["n"] == et["sans_pause"]["n"]
+
+
+def test_preuve_mesuree_seulement_sur_les_setups_jouables(settings):
+    """06/10 : la preuve porte sur les setups ≥ seuil 🟢 ; des 🟡 (60-69) perdants ne doivent pas la diluer."""
+    cands, arrays = _cands_and_arrays()
+    for c in cands:
+        if c.strategy == "B":
+            c.strategy, c.quality = "A", 65          # même stratégie, mais sous le seuil 🟢 : perdants
+    s = settings.model_copy(update={"edge_min_trades": 5, "score_trade": 70, "score_watch": 60})
+    rep = walk_forward_v2(cands, arrays, s, BTParams(fee_pct=0.05, maker_fee_pct=0.02), folds=5)
+    e = rep["edges"][edge_key("A", R.RANGE)]
+    assert e["win_rate_pct"] == 100.0 and e["prouve"]
