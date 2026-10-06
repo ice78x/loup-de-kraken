@@ -15,7 +15,7 @@ test("rapport : AVANT / APRÈS, combinaisons prouvées, rien d'autre", () => {
   const m = (n, w, e, pf) => ({ trades: n, win_rate_pct: w, expectancy_r: e, profit_factor: pf, max_drawdown_pct: 12.5, pire_serie_pertes: 6 });
   const run = { created_at: new Date().toISOString(), report: { jours: 120, instruments: { PF_XBTUSD: 1, PF_ETHUSD: 1 }, periode_hors_echantillon: "2026-07-01 → 2026-10-04",
     avant: m(210, 41.2, -0.18, 0.78), apres: m(23, 52.1, 0.31, 1.6),
-    edges: { "tendance_pullback|TREND": { n: 44, expectancy_r: 0.27, win_rate_pct: 50, profit_factor: 1.5, prouve: true },
+    edges: { "tendance_pullback|TREND": { n: 44, expectancy_r: 0.27, win_rate_pct: 50, profit_factor: 1.5, prouve: true, oos_n: 9, oos_expectancy_r: 0.2 },
       "rejet_sweep|RANGE": { n: 61, expectancy_r: -0.2, win_rate_pct: 38, profit_factor: 0.7, prouve: false } } } };
   const h = backtestBlock(run);
   assert.match(h, /AVANT \(ancien moteur\)/);
@@ -35,4 +35,15 @@ test("une combinaison qui perd hors échantillon (3 trades ou plus) n'est plus a
   const run = { created_at: new Date().toISOString(), report: { jours: 120, instruments: {}, periode_hors_echantillon: "x", avant: { trades: 0 }, apres: { trades: 0 },
     edges: { "cassure_retest|TREND": { n: 38, expectancy_r: 0.064, profit_factor: 1.1, prouve: true, oos_n: 4, oos_expectancy_r: -1.132 } } } };
   assert.match(backtestBlock(run), /Aucune combinaison prouvée/);
+});
+
+test("positive sur l'historique mais jamais confirmée hors échantillon → pas de 🟢 (règle du 06/10)", () => {
+  const run = { created_at: new Date().toISOString(), report: { jours: 120, instruments: {}, periode_hors_echantillon: "x", avant: { trades: 0 }, apres: { trades: 0 },
+    edges: { "rejet_sweep|TREND": { n: 43, expectancy_r: 0.069, profit_factor: 1.13, prouve: true, oos_n: 0, oos_expectancy_r: null },
+      "rejet_sweep|RANGE": { n: 38, expectancy_r: 0.397, profit_factor: 1.7, prouve: true, oos_n: 13, oos_expectancy_r: 0.252 } } } };
+  const h = backtestBlock(run);
+  assert.match(h, /Rejet[^<]*· Range<\/b> : 38 trades/);
+  assert.match(h, /confirmé sur 13 trades jamais vus/);
+  assert.match(h, /⏳ pas encore confirmé/);
+  assert.doesNotMatch(h, /<li><b>[^<]*Tendance<\/b>/);
 });

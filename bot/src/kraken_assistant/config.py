@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     require_proven_edge: bool = True
     edge_min_trades: int = 20
     edge_min_pf: float = 1.1
+    # 06/10 : un 🟢 exige aussi une confirmation HORS ÉCHANTILLON (≥ 3 trades réellement joués par le walk-forward,
+    # espérance > 0). Ex. rejet_sweep|TREND : +0,07R sur l'historique mais 0 trade jamais vu → pas de 🟢.
+    edge_min_oos_trades: int = 3
     v2_edges: dict = {}                       # "stratégie|famille de régime" -> stats (rempli par le cloud)
     # Pause après un stop (06/10, ex. WLD LONG : 🟢 après 6 🟡 identiques tous stoppés dans la nuit) :
     # pas de 🟢 si le même instrument, dans le même sens, vient de toucher son stop initial (0 = règle coupée).

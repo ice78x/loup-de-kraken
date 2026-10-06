@@ -85,7 +85,9 @@ def edge_table(pairs: list[tuple[str, float]]) -> dict[str, dict]:
     return out
 
 
-def proven(e: dict | None, s: Settings) -> bool:
+def proven(e: dict | None, s: Settings, require_oos: bool = False) -> bool:
+    """Preuve statistique. require_oos=True (scanner, verdict final) : il faut en plus ≥ edge_min_oos_trades trades
+    hors échantillon avec une espérance > 0. Les tranches du walk-forward n'ont pas encore de hors-échantillon : False."""
     if not e or e.get("n", 0) < s.edge_min_trades:
         return False
     if (e.get("expectancy_r") or 0) <= 0 or (e.get("profit_factor") or 0) < s.edge_min_pf:
@@ -93,7 +95,11 @@ def proven(e: dict | None, s: Settings) -> bool:
     # Hors échantillon : dès 3 trades réellement joués par le walk-forward, une espérance ≤ 0 annule la preuve
     # (ex. 04/10 : cassure_retest en tendance, +0,06R sur tout l'historique mais −1,13R sur ses 4 trades hors échantillon).
     oos_n, oos_e = e.get("oos_n", 0) or 0, e.get("oos_expectancy_r")
-    return not (oos_n >= 3 and oos_e is not None and oos_e <= 0)
+    if oos_n >= 3 and oos_e is not None and oos_e <= 0:
+        return False
+    if require_oos and (oos_n < s.edge_min_oos_trades or oos_e is None or oos_e <= 0):
+        return False
+    return True
 
 
 def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settings, p: BTParams,
@@ -148,7 +154,7 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         rs = oos_by_key.get(key, [])
         e["oos_n"] = len(rs)
         e["oos_expectancy_r"] = round(sum(rs) / len(rs), 3) if rs else None
-        e["prouve"] = proven(e, s)
+        e["prouve"] = proven(e, s, require_oos=True)
     # Étude large de la pause (beaucoup plus de trades que le walk-forward) : tous les setups v2 sans coupe-circuit,
     # qualité ≥ seuil 🟡, joués un par un sur toute la période. La règle n'a aucun paramètre appris (6 h / 24 h fixés
     # à l'avance) : elle peut donc être mesurée sur toute la période sans biais d'apprentissage.
@@ -168,7 +174,8 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         "regles": {"avant": f"ancien score ≥ {LEGACY_THRESHOLD}, filtres durs, confirmé",
                    "apres": f"qualité ≥ {s.score_trade}/100, aucun coupe-circuit (régime, BTC, conflit 4h/1h, R:R net ≥ "
                             f"{s.min_net_rr_tp2_v2:g}), combinaison stratégie×régime prouvée sur le passé "
-                            f"(≥ {s.edge_min_trades} trades, espérance > 0, PF ≥ {s.edge_min_pf:g})",
+                            f"(≥ {s.edge_min_trades} trades, espérance > 0, PF ≥ {s.edge_min_pf:g}) ; pour le scanner, en plus "
+                            f"≥ {s.edge_min_oos_trades} trades hors échantillon gagnants en moyenne",
                    "frais": f"taker {p.fee_pct:g} % · maker {p.maker:g} % · glissement {p.slippage_pct:g} % sur les stops"},
     }
 

@@ -34,8 +34,9 @@ export function backtestBlock(run, { admin = false } = {}) {
   if (!r.avant) {
     return `<section class="section"><h2>📊 Backtest du moteur</h2><div class="vide"><strong>Backtest impossible</strong>${esc(r.message || "données insuffisantes")}</div>${bouton}</section>`;
   }
-  // Même règle que le bot (walkforward.proven) : une espérance ≤ 0 sur 3 trades hors échantillon ou plus annule la preuve.
-  const ok = (e) => !!e.prouve && !((+e.oos_n || 0) >= 3 && e.oos_expectancy_r != null && +e.oos_expectancy_r <= 0);
+  // Même règle que le bot (walkforward.proven, require_oos) : il faut au moins 3 trades hors échantillon,
+  // avec une espérance > 0 (06/10). Sinon : pas de 🟢.
+  const ok = (e) => !!e.prouve && (+e.oos_n || 0) >= 3 && e.oos_expectancy_r != null && +e.oos_expectancy_r > 0;
   const edges = Object.entries(r.edges || {}).map(([k, e]) => [k, { ...e, prouve: ok(e) }])
     .sort((a, b) => (b[1].prouve - a[1].prouve) || b[1].n - a[1].n);
   const prouves = edges.filter(([, e]) => e.prouve);
@@ -49,13 +50,14 @@ export function backtestBlock(run, { admin = false } = {}) {
     <p class="small muted">Espérance = gain moyen par trade, en multiples du risque (R). Profit factor = gains ÷ pertes (au-dessus de 1 = gagnant).
       Pire baisse = recul maximum du capital avec 1 % de risque par trade.</p>
     <h3>Ce qui a le droit de donner un 🟢</h3>
-    ${prouves.length ? `<ul>${prouves.map(([k, e]) => `<li><b>${esc(combo(k))}</b> : ${e.n} trades testés, ${rr(+e.expectancy_r)} / trade, PF ${nombre(e.profit_factor)}</li>`).join("")}</ul>`
+    ${prouves.length ? `<ul>${prouves.map(([k, e]) => `<li><b>${esc(combo(k))}</b> : ${e.n} trades testés, ${rr(+e.expectancy_r)} / trade, PF ${nombre(e.profit_factor)} ·
+        confirmé sur ${e.oos_n} trades jamais vus (${rr(+e.oos_expectancy_r)})</li>`).join("")}</ul>`
       : `<p class="bloc"><b>🟡 Aucune combinaison prouvée.</b> Le bot ne donnera aucun 🟢 tant que ça ne change pas. C'est voulu : mieux vaut rater un trade que prendre un mauvais trade.</p>`}
     <details><summary class="small">Toutes les combinaisons testées</summary><div class="table-wrap"><table>
       <thead><tr><th>Stratégie · régime</th><th class="d">Trades</th><th class="d">Réussite</th><th class="d">Espérance</th><th class="d">PF</th><th>Verdict</th></tr></thead>
       <tbody>${edges.map(([k, e]) => `<tr><td>${esc(combo(k))}</td><td class="d num">${e.n}</td><td class="d num">${pct(+e.win_rate_pct, 0)}</td>
         <td class="d num ${cls(+e.expectancy_r)}">${rr(+e.expectancy_r)}</td><td class="d num">${nombre(e.profit_factor)}</td>
-        <td>${e.prouve ? "🟢 prouvé" : "🚫 non"}</td></tr>`).join("")}</tbody></table></div></details>
+        <td>${e.prouve ? "🟢 prouvé" : (+e.oos_n || 0) < 3 && +e.expectancy_r > 0 ? "⏳ pas encore confirmé" : "🚫 non"}</td></tr>`).join("")}</tbody></table></div></details>
     <p class="small muted">Un résultat passé est une mesure, pas une promesse.</p>${bouton}</section>`;
 }
 

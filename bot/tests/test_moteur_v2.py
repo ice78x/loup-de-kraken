@@ -106,8 +106,12 @@ def test_preuve_statistique(settings):
     rg = Regime(R.RANGE, 0.8)
     q = {"regime": rg, "net_rr": [1.4, 2.0, 2.8]}
     key = edge_key("rejet_sweep", R.RANGE)
-    ok = settings.model_copy(update={"v2_edges": {key: {"n": 40, "expectancy_r": 0.25, "profit_factor": 1.5}}})
+    ok = settings.model_copy(update={"v2_edges": {key: {"n": 40, "expectancy_r": 0.25, "profit_factor": 1.5,
+                                                        "oos_n": 13, "oos_expectancy_r": 0.25}}})
     assert kill_switch(_st(), _a(rg), ok, q) == []
+    jamais_vu = settings.model_copy(update={"v2_edges": {key: {"n": 43, "expectancy_r": 0.069, "profit_factor": 1.13,
+                                                               "oos_n": 0, "oos_expectancy_r": None}}})   # vrai cas du 06/10
+    assert any("pas encore confirmé" in x for x in kill_switch(_st(), _a(rg), jamais_vu, q))
     bad = settings.model_copy(update={"v2_edges": {key: {"n": 40, "expectancy_r": -0.1, "profit_factor": 0.8}}})
     assert any("perd en backtest" in x for x in kill_switch(_st(), _a(rg), bad, q))
     few = settings.model_copy(update={"v2_edges": {key: {"n": 8, "expectancy_r": 0.9, "profit_factor": 3}}})

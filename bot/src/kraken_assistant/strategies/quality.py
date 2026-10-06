@@ -155,7 +155,12 @@ def kill_switch(st, a, s: Settings, q: dict, check_edge: bool = True) -> list[st
             out.append(f"perd en backtest ({e.get('expectancy_r', 0):+.2f}R/trade sur {e.get('n')} trades)")
         else:
             from ..backtest.walkforward import proven
-            if not proven(e, s):
-                out.append(f"perd en backtest hors échantillon ({(e.get('oos_expectancy_r') or 0):+.2f}R/trade sur "
-                           f"{e.get('oos_n')} trades jamais vus)")
+            if not proven(e, s, require_oos=True):
+                n_oos = e.get("oos_n") or 0
+                if n_oos < s.edge_min_oos_trades:
+                    out.append(f"pas encore confirmé sur des données jamais vues ({n_oos} trade(s) hors échantillon, "
+                               f"{s.edge_min_oos_trades} requis)")
+                else:
+                    out.append(f"perd en backtest hors échantillon ({(e.get('oos_expectancy_r') or 0):+.2f}R/trade sur "
+                               f"{n_oos} trades jamais vus)")
     return out
