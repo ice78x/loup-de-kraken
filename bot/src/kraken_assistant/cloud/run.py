@@ -82,11 +82,11 @@ def build(sb: Supabase | None) -> App:
             upd["live_edges"] = live_edges(sb.select("signal_stats"))
         except SupabaseError as e:
             log.warning("statistiques réelles des signaux indisponibles (lance supabase/schema.sql) : %s", e)
-        upd.update(v2_inputs(sb))
+        upd.update(v2_inputs(sb, upd.get("cooldown_after_stop_h", base.cooldown_after_stop_h)))
     return App.build(base.model_copy(update=upd))
 
 
-def v2_inputs(sb: Supabase) -> dict:
+def v2_inputs(sb: Supabase, cooldown_h: float = 0.0) -> dict:
     """Moteur v2 : combinaisons prouvées du dernier backtest walk-forward + stratégies en série de pertes (réel)."""
     out: dict = {}
     try:
@@ -106,6 +106,17 @@ def v2_inputs(sb: Supabase) -> dict:
             log.warning("stratégie %s suspendue : %s", k, why)
     except SupabaseError as e:
         log.warning("dégradation non vérifiée : %s", e)
+    h = float(cooldown_h or 0)
+    if h > 0:
+        try:
+            since = (datetime.now(timezone.utc) - timedelta(hours=h)).isoformat()
+            rows = sb.select("signal_outcomes", {"select": "instrument_key,direction", "outcome": "eq.sl",
+                                                 "resolved_at": f"gte.{since}", "limit": "1000"})
+            out["recent_stops"] = sorted({f"{r['instrument_key']}|{r['direction']}" for r in rows if r.get("instrument_key")})
+            if out["recent_stops"]:
+                log.info("pause après stop (%g h) : %s", h, ", ".join(out["recent_stops"]))
+        except SupabaseError as e:
+            log.warning("stops récents non lus : %s", e)
     return out
 
 

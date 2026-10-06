@@ -141,6 +141,8 @@ def kill_switch(st, a, s: Settings, q: dict, check_edge: bool = True) -> list[st
     r2 = nr[1] if len(nr) > 1 else (nr[0] if nr else 0.0)
     if r2 < s.min_net_rr_tp2_v2:
         out.append(f"R:R net de frais insuffisant au TP2 ({r2:.1f}R < {s.min_net_rr_tp2_v2:g}R)")
+    if s.cooldown_after_stop_h > 0 and f"{a.inst.key}|{st.direction}" in (s.recent_stops or []):
+        out.append(f"même setup stoppé il y a moins de {s.cooldown_after_stop_h:g} h : le marché a déjà dit non")
     if st.strategy in (s.degraded_strategies or []):
         out.append(f"{st.strategy} en série de pertes : désactivée jusqu'à analyse")
     if check_edge and s.require_proven_edge and st.strategy != "news":

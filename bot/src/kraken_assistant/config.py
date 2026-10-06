@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     edge_min_trades: int = 20
     edge_min_pf: float = 1.1
     v2_edges: dict = {}                       # "stratégie|famille de régime" -> stats (rempli par le cloud)
+    # Pause après un stop (06/10, ex. WLD LONG : 🟢 après 6 🟡 identiques tous stoppés dans la nuit) :
+    # pas de 🟢 si le même instrument, dans le même sens, vient de toucher son stop initial (0 = règle coupée).
+    cooldown_after_stop_h: float = 0.0
+    recent_stops: list[str] = Field(default_factory=list)          # "instrument_key|SENS" (rempli par le cloud)
     degraded_strategies: list[str] = Field(default_factory=list)  # série de pertes récente (rempli par le cloud)
     min_net_rr_tp2_v2: float = 1.5            # R:R net de frais minimal au TP2 pour un 🟢 v2
     disabled_strategies: list[str] = Field(default_factory=list)

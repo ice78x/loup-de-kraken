@@ -45,7 +45,7 @@ export function backtestBlock(run, { admin = false } = {}) {
       Frais et glissement déduits. Lancé ${ago(run.created_at)}.</p>
     <div class="table-wrap"><table><thead><tr><th></th><th class="d">Trades</th><th class="d">Réussite</th><th class="d">Espérance</th>
       <th class="d">Profit factor</th><th class="d">Pire baisse</th><th class="d">Pire série</th></tr></thead>
-      <tbody>${ligne("AVANT (ancien moteur)", r.avant)}${ligne("APRÈS (moteur v2)", r.apres)}${r.apres_seuil_70 ? ligne("v2, prouvé dès 70/100", r.apres_seuil_70) : ""}</tbody></table></div>
+      <tbody>${ligne("AVANT (ancien moteur)", r.avant)}${ligne("APRÈS (moteur v2)", r.apres)}${r.apres_seuil_70 ? ligne("v2, prouvé dès 70/100", r.apres_seuil_70) : ""}${r.apres_pause_stop_6h ? ligne("v2 + pause 6 h après un stop", r.apres_pause_stop_6h) : ""}${r.apres_pause_stop_24h ? ligne("v2 + pause 24 h après un stop", r.apres_pause_stop_24h) : ""}</tbody></table></div>
     <p class="small muted">Espérance = gain moyen par trade, en multiples du risque (R). Profit factor = gains ÷ pertes (au-dessus de 1 = gagnant).
       Pire baisse = recul maximum du capital avec 1 % de risque par trade.</p>
     <h3>Ce qui a le droit de donner un 🟢</h3>

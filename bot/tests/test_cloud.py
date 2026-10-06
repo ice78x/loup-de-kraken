@@ -32,6 +32,8 @@ class FakePostgrest:
                 return False
             if op == "neq" and str(cur).lower() == val.lower():
                 return False
+            if op == "gte" and not (str(cur) >= val):
+                return False
         return True
 
     def handler(self, req: httpx.Request) -> httpx.Response:
@@ -271,3 +273,15 @@ def test_cron_github_de_secours_ne_double_pas_le_scan():
     assert cloud.backup_should_skip(sb, "schedule", now) is False            # une vérif d'une seule paire ne compte pas
     pg.tables["scans"] = [{"id": 1, "mode": "normal", "created_at": "2026-10-06T09:30:00Z"}]
     assert cloud.backup_should_skip(sb, "schedule", now) is False            # 30 min sans scan : Netlify a raté, on scanne
+
+
+def test_stops_recents_lus_pour_la_pause():
+    pg = FakePostgrest()
+    sb = Supabase("https://x.supabase.co", "service", transport=httpx.MockTransport(pg.handler))
+    now = datetime.now(timezone.utc)
+    pg.tables["signal_outcomes"] = [
+        {"instrument_key": "futures:PF_WLDUSD", "direction": "LONG", "outcome": "sl", "resolved_at": (now - timedelta(hours=1)).isoformat()},
+        {"instrument_key": "futures:PF_SOLUSD", "direction": "SHORT", "outcome": "sl", "resolved_at": (now - timedelta(hours=9)).isoformat()},
+        {"instrument_key": "futures:PF_ETHUSD", "direction": "LONG", "outcome": "tp3", "resolved_at": now.isoformat()}]
+    assert "recent_stops" not in cloud.v2_inputs(sb, 0)                         # règle coupée : rien n'est lu
+    assert cloud.v2_inputs(sb, 6)["recent_stops"] == ["futures:PF_WLDUSD|LONG"]  # SOL trop vieux, ETH gagnant

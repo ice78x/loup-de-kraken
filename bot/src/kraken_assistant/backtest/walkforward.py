@@ -24,7 +24,7 @@ LEGACY_THRESHOLD = 60
 
 
 def _edge_trades(cands: list[Candidate], arrays: dict[str, Arrays], p: BTParams, s: Settings,
-                 start=None, end=None) -> list[tuple[str, float]]:
+                 start=None, end=None, skip=None) -> list[tuple[str, float]]:
     """Base d'apprentissage des edges : tous les candidats v2 sans coupe-circuit et de qualité ≥ seuil 🟡,
     simulés un par un (sans contrainte de portefeuille, pour mesurer la stratégie elle-même)."""
     out = []
@@ -34,6 +34,8 @@ def _edge_trades(cands: list[Candidate], arrays: dict[str, Arrays], p: BTParams,
             continue
         if cd.kill or cd.quality < s.score_watch:
             continue
+        if skip is not None and skip(cd):
+            continue
         if cd.key in seen and cd.ts <= seen[cd.key]:
             continue
         r, j, _ = simulate(cd, arrays[cd.key], p)
@@ -41,6 +43,32 @@ def _edge_trades(cands: list[Candidate], arrays: dict[str, Arrays], p: BTParams,
         if r is not None:
             out.append((edge_key(cd.strategy, cd.regime), r))
     return out
+
+
+COOLDOWNS_H = (6, 24)   # fixés à l'avance (06/10), pas optimisés : 6 h et 24 h
+
+
+def stop_events(cands: list[Candidate], arrays: dict[str, Arrays], p: BTParams, s: Settings) -> dict[tuple[str, str], list]:
+    """Comme le suivi réel (signal_outcomes) : chaque signal publié (🟡 ou 🟢, qualité ≥ seuil 🟡) est rejoué seul.
+    Retourne, par (instrument, sens), les instants où un signal a touché son stop INITIAL."""
+    out: dict[tuple[str, str], list] = {}
+    for cd in cands:
+        if cd.quality < s.score_watch:
+            continue
+        A = arrays[cd.key]
+        r, j, why = simulate(cd, A, p)
+        if r is not None and r < 0 and why == "SL":
+            out.setdefault((cd.key, cd.direction), []).append(A.index[j])
+    for v in out.values():
+        v.sort()
+    return out
+
+
+def recently_stopped(cd: Candidate, events: dict[tuple[str, str], list], hours: float) -> bool:
+    """Un stop du même instrument dans le même sens, déjà CLÔTURÉ au moment de la décision (bougie de stop
+    strictement avant la bougie du signal) et vieux de moins de `hours` heures. Aucun regard vers le futur."""
+    lo = cd.ts - pd.Timedelta(hours=hours)
+    return any(lo <= t < cd.ts for t in events.get((cd.key, cd.direction), ()))
 
 
 def edge_table(pairs: list[tuple[str, float]]) -> dict[str, dict]:
@@ -86,6 +114,8 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
     apres: list[BTTrade] = []
     sans_preuve: list[BTTrade] = []
     seuil70: list[BTTrade] = []      # variante : combinaisons prouvées dès 70/100 (la population sur laquelle la preuve est mesurée)
+    stops = stop_events(cands, arrays, p, s)
+    pause: dict[int, list[BTTrade]] = {h: [] for h in COOLDOWNS_H}   # variante : APRÈS + pause après un stop récent
     oos_by_key: dict[str, list[float]] = {}
     fold_rows = []
     for k in range(1, folds):
@@ -98,6 +128,10 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         f70 = evaluate_rule(cands, arrays, p_new, lambda c: not c.kill and c.quality >= s.score_watch
                             and edge_key(c.strategy, c.regime) in allowed, start, end)
         seuil70 += f70
+        fp = {h: evaluate_rule(cands, arrays, p_new, lambda c, h=h: v2_rule(c) and edge_key(c.strategy, c.regime) in allowed
+                               and not recently_stopped(c, stops, h), start, end) for h in COOLDOWNS_H}
+        for h in COOLDOWNS_H:
+            pause[h] += fp[h]
         avant += fa
         apres += fn
         sans_preuve += fs
@@ -105,13 +139,21 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
             oos_by_key.setdefault(edge_key(t.strategy, t.regime), []).append(t.r)
         fold_rows.append({"debut": f"{start:%Y-%m-%d}", "fin": f"{end:%Y-%m-%d}", "combinaisons_prouvees": sorted(allowed),
                           "avant": _short(fa), "apres": _short(fn), "apres_sans_preuve": _short(fs),
-                          "apres_seuil_70": _short(f70)})
+                          "apres_seuil_70": _short(f70),
+                          **{f"apres_pause_stop_{h}h": _short(fp[h]) for h in COOLDOWNS_H}})
     final = edge_table(_edge_trades(cands, arrays, p, s))
     for key, e in final.items():
         rs = oos_by_key.get(key, [])
         e["oos_n"] = len(rs)
         e["oos_expectancy_r"] = round(sum(rs) / len(rs), 3) if rs else None
         e["prouve"] = proven(e, s)
+    # Étude large de la pause (beaucoup plus de trades que le walk-forward) : tous les setups v2 sans coupe-circuit,
+    # qualité ≥ seuil 🟡, joués un par un sur toute la période. La règle n'a aucun paramètre appris (6 h / 24 h fixés
+    # à l'avance) : elle peut donc être mesurée sur toute la période sans biais d'apprentissage.
+    etude = {"sans_pause": edge_table([("x", r) for _, r in _edge_trades(cands, arrays, p, s)]).get("x")}
+    for h in COOLDOWNS_H:
+        etude[f"pause_{h}h"] = edge_table([("x", r) for _, r in _edge_trades(
+            cands, arrays, p, s, skip=lambda c, h=h: recently_stopped(c, stops, h))]).get("x")
     period = f"{cuts[1]:%Y-%m-%d} → {cuts[-1]:%Y-%m-%d}"
     return {
         "periode_hors_echantillon": period, "periode_totale": f"{t0:%Y-%m-%d} → {t1:%Y-%m-%d}",
@@ -119,7 +161,8 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         "avant": metrics(avant, period=period), "apres": metrics(apres, period=period),
         "apres_sans_preuve": metrics(sans_preuve, period=period),
         "apres_seuil_70": metrics(seuil70, period=period),
-        "folds": fold_rows, "edges": final,
+        **{f"apres_pause_stop_{h}h": metrics(pause[h], period=period) for h in COOLDOWNS_H},
+        "folds": fold_rows, "edges": final, "etude_pause_stop": etude,
         "regles": {"avant": f"ancien score ≥ {LEGACY_THRESHOLD}, filtres durs, confirmé",
                    "apres": f"qualité ≥ {s.score_trade}/100, aucun coupe-circuit (régime, BTC, conflit 4h/1h, R:R net ≥ "
                             f"{s.min_net_rr_tp2_v2:g}), combinaison stratégie×régime prouvée sur le passé "

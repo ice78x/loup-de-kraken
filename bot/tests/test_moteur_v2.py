@@ -10,7 +10,7 @@ from conftest import random_walk
 from kraken_assistant.analysis import regime as R
 from kraken_assistant.analysis.regime import MarketContext, Regime, regime_from_frames
 from kraken_assistant.backtest.engine import Arrays, BTParams, BTTrade, Candidate, metrics
-from kraken_assistant.backtest.walkforward import edge_table, proven, walk_forward_v2
+from kraken_assistant.backtest.walkforward import edge_table, proven, recently_stopped, walk_forward_v2
 from kraken_assistant.cloud.learning import degraded_strategies
 from kraken_assistant.market.candles import resample
 from kraken_assistant.strategies.quality import edge_key, grade, kill_switch, net_rr
@@ -82,7 +82,7 @@ def _st(strategy="rejet_sweep", direction="LONG"):
 
 
 def _a(rg, btc=None, s4="range", s1="range"):
-    return NS(regime=rg, context=MarketContext(btc=btc), inst=NS(base="X", asset_class="crypto", venue="futures", taker_fee_pct=None),
+    return NS(regime=rg, context=MarketContext(btc=btc), inst=NS(key="futures:PF_XUSD", base="X", asset_class="crypto", venue="futures", taker_fee_pct=None),
               structures={"4h": NS(trend=s4), "1h": NS(trend=s1)})
 
 
@@ -221,3 +221,36 @@ def test_backtest_cloud_bout_en_bout(settings, tmp_path, monkeypatch):
     txt = summary_text(rep)
     assert "AVANT" in txt and "APRÈS" in txt
     print(txt)
+
+
+# ------------------------------------------------------------------ pause après un stop (06/10)
+def test_pause_apres_stop_bloque_le_vert(settings):
+    rg = Regime(R.RANGE, 0.8)
+    q = {"regime": rg, "net_rr": [1.4, 2.0, 2.8]}
+    base = settings.model_copy(update={"require_proven_edge": False, "recent_stops": ["futures:PF_XUSD|LONG"]})
+    assert kill_switch(_st(), _a(rg), base, q) == []                                   # règle coupée (0 h) : rien
+    on = base.model_copy(update={"cooldown_after_stop_h": 6})
+    assert any("stoppé" in x for x in kill_switch(_st(), _a(rg), on, q))                # même paire, même sens : pas de 🟢
+    assert kill_switch(_st(direction="SHORT"), _a(rg), on, q) == []                    # l'autre sens reste possible
+
+
+def test_pause_ne_regarde_jamais_le_futur():
+    t = pd.Timestamp("2026-10-06 04:00", tz="UTC")
+    c = Candidate("k", "crypto", 0, t, "A", "LONG", 1, 1, 1, (2, 3, 4), 70, 2.0)
+    ev = lambda *ts: {("k", "LONG"): [pd.Timestamp(x, tz="UTC") for x in ts]}
+    assert recently_stopped(c, ev("2026-10-06 02:45"), 6)              # stop clôturé 1 h avant : pause
+    assert not recently_stopped(c, ev("2026-10-06 04:00"), 6)          # bougie du signal elle-même : pas encore connue
+    assert not recently_stopped(c, ev("2026-10-06 05:00"), 6)          # stop futur : jamais utilisé
+    assert not recently_stopped(c, ev("2026-10-05 21:00"), 6)          # trop vieux pour 6 h…
+    assert recently_stopped(c, ev("2026-10-05 21:00"), 24)             # … mais dans la fenêtre de 24 h
+    assert not recently_stopped(c, {("k", "SHORT"): [pd.Timestamp("2026-10-06 03:00", tz="UTC")]}, 6)
+
+
+def test_walk_forward_mesure_la_pause(settings):
+    cands, arrays = _cands_and_arrays()
+    s = settings.model_copy(update={"edge_min_trades": 5})
+    rep = walk_forward_v2(cands, arrays, s, BTParams(fee_pct=0.05, maker_fee_pct=0.02), folds=5)
+    assert "apres_pause_stop_6h" in rep and "apres_pause_stop_24h" in rep
+    et = rep["etude_pause_stop"]
+    # B (stoppé) alterne avec A toutes les 15 h : la pause de 24 h retire des A placés juste après un stop de B
+    assert et["sans_pause"]["n"] > et["pause_24h"]["n"] and et["pause_6h"]["n"] == et["sans_pause"]["n"]

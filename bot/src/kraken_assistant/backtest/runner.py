@@ -109,7 +109,12 @@ def summary_text(rep: dict) -> str:
     out = [f"BACKTEST WALK-FORWARD · hors échantillon {rep['periode_hors_echantillon']} · {len(rep.get('instruments', {}))} perpétuels",
            line("AVANT (ancien moteur)", rep["avant"]), line("APRÈS (moteur v2)", rep["apres"]),
            line("v2 sans preuve", rep["apres_sans_preuve"]),
-           line("v2 prouvé dès 70/100", rep.get("apres_seuil_70", {})), "", "Combinaisons prouvées (stratégie|régime) :"]
+           line("v2 prouvé dès 70/100", rep.get("apres_seuil_70", {})),
+           line("v2 + pause stop 6 h", rep.get("apres_pause_stop_6h", {})),
+           line("v2 + pause stop 24 h", rep.get("apres_pause_stop_24h", {})), "", "Combinaisons prouvées (stratégie|régime) :"]
+    for k, e in (rep.get("etude_pause_stop") or {}).items():
+        if e:
+            out.insert(-1, f"Étude pause après stop · {k:<11} {e['n']:>4} trades · {e['expectancy_r']:+.3f}R · win {e['win_rate_pct']} % · PF {e['profit_factor']}")
     proved = [f"  {k} : {e['n']} trades, {e['expectancy_r']:+.3f}R, PF {e['profit_factor']}" for k, e in rep["edges"].items() if e.get("prouve")]
     out += proved or ["  aucune → le moteur v2 ne donnera AUCUN 🟢 (pas d'avantage démontré)"]
     return "\n".join(out)
