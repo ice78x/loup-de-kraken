@@ -27,8 +27,11 @@ def regime_family(name: str) -> str:
     return "TREND" if name.startswith("TREND") else "BREAKOUT" if name.startswith("BREAKOUT") else name
 
 
-def edge_key(strategy: str, regime: str) -> str:
-    return f"{strategy}|{regime_family(regime)}"
+def edge_key(strategy: str, regime: str, asset_class: str = "crypto") -> str:
+    """Combinaison prouvée : stratégie × famille de régime, et classe d'actif hors crypto (07/10) —
+    l'or ou une action ne se comportent pas comme une crypto : leur preuve est mesurée à part."""
+    base = f"{strategy}|{regime_family(regime)}"
+    return base if asset_class in ("crypto", "", None) else f"{base}|{asset_class}"
 
 
 def grade(score: float, s: Settings) -> str:
@@ -146,7 +149,7 @@ def kill_switch(st, a, s: Settings, q: dict, check_edge: bool = True) -> list[st
     if st.strategy in (s.degraded_strategies or []):
         out.append(f"{st.strategy} en série de pertes : désactivée jusqu'à analyse")
     if check_edge and s.require_proven_edge and st.strategy != "news":
-        e = (s.v2_edges or {}).get(edge_key(st.strategy, rg.name))
+        e = (s.v2_edges or {}).get(edge_key(st.strategy, rg.name, getattr(a.inst, "asset_class", "crypto")))
         if not e:
             out.append(f"avantage statistique non démontré ({st.strategy} en {rg.label.lower()} : pas encore de backtest)")
         elif e.get("n", 0) < s.edge_min_trades:

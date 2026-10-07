@@ -17,13 +17,15 @@ function ligne(nom, m) {
     <td class="d num">${pct(+m.max_drawdown_pct, 1)}</td><td class="d num">${m.pire_serie_pertes ?? "—"}</td></tr>`;
 }
 
+const CLASSE = { commodity: "Matières premières", xstock: "Actions" };
+
 export function combo(key) {
-  const [strat, reg] = String(key).split("|");
-  return `${STRAT[strat] || strat} · ${REGIME[reg] || reg}`;
+  const [strat, reg, cl] = String(key).split("|");
+  return `${STRAT[strat] || strat} · ${REGIME[reg] || reg}${cl ? ` · ${CLASSE[cl] || cl}` : ""}`;
 }
 
 export function backtestBlock(run, { admin = false } = {}) {
-  const bouton = admin ? `<p><button type="button" class="btn principal mini" data-backtest>▶️ Lancer un backtest (120 jours, 16 perpétuels)</button>
+  const bouton = admin ? `<p><button type="button" class="btn principal mini" data-backtest>▶️ Lancer un backtest (120 jours, 16 cryptos + matières premières + actions)</button>
     <span class="small muted">30 à 90 min sur GitHub · 1 par heure au plus</span></p>` : "";
   if (!run || !run.report) {
     return `<section class="section"><h2>📊 Backtest du moteur</h2>
@@ -42,7 +44,7 @@ export function backtestBlock(run, { admin = false } = {}) {
   const prouves = edges.filter(([, e]) => e.prouve);
   return `<section class="section"><h2>📊 Backtest du moteur</h2>
     ${r.etude ? `<p class="bloc small"><b>🔬 Étude :</b> ce backtest sert à explorer. Le bot ne s'en sert pas pour autoriser les 🟢.</p>` : ""}
-    <p class="muted">Rejoué sur <b>${Object.keys(r.instruments || {}).length} perpétuels Kraken</b> (vraies bougies 15 min, ${r.jours} jours).
+    <p class="muted">Rejoué sur <b>${Object.keys(r.instruments || {}).length} perpétuels Kraken</b>${r.classes ? ` (${Object.entries(r.classes).map(([k, v]) => `${v} ${k === "crypto" ? "cryptos" : (CLASSE[k] || k).toLowerCase()}`).join(", ")})` : ""} (vraies bougies 15 min, ${r.jours} jours).
       Mesuré <b>hors échantillon</b> (${esc(r.periode_hors_echantillon)}) : chaque période est jugée avec ce que le bot savait <i>avant</i>.
       Frais et glissement déduits. Lancé ${ago(run.created_at)}.</p>
     <div class="table-wrap"><table><thead><tr><th></th><th class="d">Trades</th><th class="d">Réussite</th><th class="d">Espérance</th>

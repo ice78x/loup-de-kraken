@@ -43,7 +43,7 @@ def _edge_trades(cands: list[Candidate], arrays: dict[str, Arrays], p: BTParams,
         r, j, _ = simulate(cd, arrays[cd.key], p)
         seen[cd.key] = arrays[cd.key].index[j]
         if r is not None:
-            out.append((edge_key(cd.strategy, cd.regime), r))
+            out.append((edge_key(cd.strategy, cd.regime, cd.asset_class), r))
     return out
 
 
@@ -131,12 +131,12 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         learned = edge_table(_edge_trades(cands, arrays, p, s, end=start))
         allowed = {key for key, e in learned.items() if proven(e, s)}
         fa = evaluate_rule(cands, arrays, p_old, old_rule, start, end)
-        fn = evaluate_rule(cands, arrays, p_new, lambda c: v2_rule(c) and edge_key(c.strategy, c.regime) in allowed, start, end)
+        fn = evaluate_rule(cands, arrays, p_new, lambda c: v2_rule(c) and edge_key(c.strategy, c.regime, c.asset_class) in allowed, start, end)
         fs = evaluate_rule(cands, arrays, p_new, v2_rule, start, end)
         f70 = evaluate_rule(cands, arrays, p_new, lambda c: not c.kill and c.quality >= s.score_watch
-                            and edge_key(c.strategy, c.regime) in allowed, start, end)
+                            and edge_key(c.strategy, c.regime, c.asset_class) in allowed, start, end)
         seuil70 += f70
-        fp = {h: evaluate_rule(cands, arrays, p_new, lambda c, h=h: v2_rule(c) and edge_key(c.strategy, c.regime) in allowed
+        fp = {h: evaluate_rule(cands, arrays, p_new, lambda c, h=h: v2_rule(c) and edge_key(c.strategy, c.regime, c.asset_class) in allowed
                                and not recently_stopped(c, stops, h), start, end) for h in COOLDOWNS_H}
         for h in COOLDOWNS_H:
             pause[h] += fp[h]
@@ -144,7 +144,7 @@ def walk_forward_v2(cands: list[Candidate], arrays: dict[str, Arrays], s: Settin
         apres += fn
         sans_preuve += fs
         for t in fn:
-            oos_by_key.setdefault(edge_key(t.strategy, t.regime), []).append(t.r)
+            oos_by_key.setdefault(edge_key(t.strategy, t.regime, t.asset_class), []).append(t.r)
         fold_rows.append({"debut": f"{start:%Y-%m-%d}", "fin": f"{end:%Y-%m-%d}", "combinaisons_prouvees": sorted(allowed),
                           "avant": _short(fa), "apres": _short(fn), "apres_sans_preuve": _short(fs),
                           "apres_seuil_70": _short(f70),

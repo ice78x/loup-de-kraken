@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from ..api.errors import DataUnavailable
-from ..market.instruments import tradable_universe
+from ..market.instruments import tradable_universe, us_market_open
 from ..market.prices import eur_per_quote
 from .engine import Arrays, BTParams, ContextSeries, detect, regime_series
 from .walkforward import walk_forward_v2
@@ -34,8 +34,14 @@ def _job(args):
         return []
 
 
-def pick_universe(app, max_instruments: int) -> list:
-    insts = [i for i in tradable_universe(app.discovery.discover()) if i.venue == "futures" and i.asset_class == "crypto"]
+OTHER_CLASSES = {"commodity": 10, "xstock": 12}   # 07/10 : matières premières et actions aussi testées (les plus liquides)
+
+
+def pick_universe(app, max_instruments: int, classes: dict[str, int] | None = None) -> list:
+    """Perpétuels les plus liquides : `max_instruments` cryptos (BTC et ETH toujours inclus) + par classe `classes`."""
+    classes = OTHER_CLASSES if classes is None else classes
+    wanted = {"crypto", *classes}
+    insts = [i for i in tradable_universe(app.discovery.discover()) if i.venue == "futures" and i.asset_class in wanted]
     tickers = app.prices.fetch(insts)
     try:
         usd = eur_per_quote("USD", insts, tickers)
@@ -44,19 +50,30 @@ def pick_universe(app, max_instruments: int) -> list:
     vol = {i.key: (tickers[i.key].volume_24h_base * (tickers[i.key].vwap_24h or tickers[i.key].last) * usd)
            for i in insts if i.key in tickers}
     ranked = sorted((i for i in insts if i.key in vol), key=lambda i: -vol[i.key])
-    chosen = [i for i in ranked if i.base in ("BTC", "XBT", "ETH")][:2]
-    for i in ranked:
+    crypto = [i for i in ranked if i.asset_class == "crypto"]
+    chosen = [i for i in crypto if i.base in ("BTC", "XBT", "ETH")][:2]
+    for i in crypto:
         if len(chosen) >= max_instruments:
             break
         if i not in chosen:
             chosen.append(i)
+    for cls, n in classes.items():
+        chosen += [i for i in ranked if i.asset_class == cls][:n]
     return chosen
 
 
-def run_v2(app, days: int = 120, max_instruments: int = 16, workers: int | None = None, folds: int = 5) -> dict:
+def keep_like_live(c, s) -> bool:
+    """Comme le scanner : une action (xStock) n'est analysée que bourse américaine ouverte."""
+    if c.asset_class != "xstock" or not s.xstocks_us_hours_only:
+        return True
+    return us_market_open((c.ts + pd.Timedelta(minutes=15)).to_pydatetime())
+
+
+def run_v2(app, days: int = 120, max_instruments: int = 16, workers: int | None = None, folds: int = 5,
+           classes: dict[str, int] | None = None) -> dict:
     s = app.settings
     started = datetime.now(timezone.utc)
-    insts = pick_universe(app, max_instruments)
+    insts = pick_universe(app, max_instruments, classes)
     data, skipped = {}, []
     for inst in insts:
         try:
@@ -85,12 +102,15 @@ def run_v2(app, days: int = 120, max_instruments: int = 16, workers: int | None 
             results = list(ex.map(_job, jobs))
     else:
         results = [_job(j) for j in jobs]
-    cands = [c for r in results for c in r]
+    cands = [c for r in results for c in r if keep_like_live(c, s)]
     arrays = {inst.key: Arrays.of(df) for inst, df in data.values()}
     p = BTParams(fee_pct=s.default_futures_taker_fee_pct, maker_fee_pct=s.default_futures_maker_fee_pct,
                  tp_split=s.tp_split, slippage_pct=float(os.environ.get("BACKTEST_SLIPPAGE_PCT", "0.03")), capital=100.0)
     rep = walk_forward_v2(cands, arrays, s, p, folds)
-    rep.update({"instruments": {inst.display: len(df) for inst, df in data.values()}, "ignores": skipped,
+    by_class: dict[str, int] = {}
+    for inst, _ in data.values():
+        by_class[inst.asset_class] = by_class.get(inst.asset_class, 0) + 1
+    rep.update({"instruments": {inst.display: len(df) for inst, df in data.values()}, "ignores": skipped, "classes": by_class,
                 "jours": days, "lance_le": started.isoformat(timespec="seconds"),
                 "duree_s": round((datetime.now(timezone.utc) - started).total_seconds())})
     return rep
@@ -106,7 +126,8 @@ def summary_text(rep: dict) -> str:
         pf = m.get("profit_factor")
         return (f"{name:<22} {m['trades']:>4} trades · win {m['win_rate_pct']:>5.1f} % · espérance {m['expectancy_r']:+.3f}R · "
                 f"PF {pf if pf is not None else '—'} · DD max {m['max_drawdown_pct']:.1f} % · pire série {m['pire_serie_pertes']}")
-    out = [f"BACKTEST WALK-FORWARD · hors échantillon {rep['periode_hors_echantillon']} · {len(rep.get('instruments', {}))} perpétuels",
+    out = [f"BACKTEST WALK-FORWARD · hors échantillon {rep['periode_hors_echantillon']} · {len(rep.get('instruments', {}))} perpétuels"
+           + (f" ({', '.join(f'{k} {v}' for k, v in rep.get('classes', {}).items())})" if rep.get("classes") else ""),
            line("AVANT (ancien moteur)", rep["avant"]), line("APRÈS (moteur v2)", rep["apres"]),
            line("v2 sans preuve", rep["apres_sans_preuve"]),
            line("v2 prouvé dès seuil 🟡", rep.get("apres_seuil_70", {})),

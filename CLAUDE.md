@@ -27,13 +27,15 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   `strategies/quality.py` (score qualité /100 à règles fixes, coupe-circuits `kill_switch`, preuve statistique), appelés par `finalize`.
   Seuils (`score_trade`/`score_watch`, 05/10) : ≥ 90 🔥 A+, ≥ 70 🟢, ≥ 60 🟡, sinon non publié. Stratégie autorisée seulement dans son régime (`ALLOWED`).
   **Pas de 🟢 sans preuve** (`require_proven_edge`) : combinaison stratégie × famille de régime prouvée dans le dernier backtest
-  (`backtest_runs.report.edges`, lu par `v2_inputs` dans `cloud/run.py`), mesurée sur les setups qualité ≥ `score_trade` (ceux qu'on jouerait),
+  (`backtest_runs.report.edges`, lu par `v2_inputs` dans `cloud/run.py` ; clé `edge_key` = `stratégie|RÉGIME` pour les cryptos,
+  `stratégie|RÉGIME|commodity` ou `|xstock` sinon : chaque classe est prouvée à part, 07/10), mesurée sur les setups qualité ≥ `score_trade` (ceux qu'on jouerait),
   ET confirmée hors échantillon (≥ `edge_min_oos_trades` = 3 trades jamais vus, espérance > 0 ; `proven(..., require_oos=True)`, miroir dans `site/js/backtest.js`).
   Pause après stop (`cooldown_after_stop_h`, 0 = coupée : backtest du 06/10 neutre à 6 h, pire à 24 h). Série de pertes réelle (v2) → stratégie suspendue (`degraded_strategies`).
   Au plus 2 🟢 par scan, 1 par sens sur les cryptos. L'ancien score reste calculé (`legacy_score`) pour la comparaison AVANT/APRÈS.
 - **Backtest walk-forward** : `backtest/walkforward.py` (AVANT ancien moteur / APRÈS v2, edges appris seulement sur le passé, frais + glissement),
-  `backtest/runner.py` (univers liquide, backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`
+  `backtest/runner.py` (univers liquide : cryptos + 10 matières premières + 12 actions, actions seulement bourse US ouverte `keep_like_live` ; backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`
   (manuel ou bouton admin du site via `netlify/functions/scan.mjs` mode `backtest`, + dimanche). Résultats affichés par `site/js/backtest.js`.
+  Entrée `etude=true` : backtest d'exploration, affiché mais ignoré par `v2_inputs` (jamais de 🟢 grâce à lui).
 - **Telegram** : `cloud/notify.py` envoie un message à chaque nouveau 🟢 et une pré-alerte « ⏳ prépare-toi » pour un 🟡 `presque_pret`
   (tout est bon sauf la confirmation 15m ; drapeau posé par `finalize`, stocké dans `signals.quality` ; jamais pour un setup `stale` :
   rejet/piège de plus d'1 h (`MAX_SIGNAL_AGE_BARS`), qui ne sera plus jamais confirmé → `quality.perime`, carte « ⌛ Trop tard » sur le site), sans doublon sur 4 h (secret GitHub `TELEGRAM_BOT_TOKEN` ;

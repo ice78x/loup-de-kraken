@@ -47,3 +47,11 @@ test("positive sur l'historique mais jamais confirmée hors échantillon → pas
   assert.match(h, /⏳ pas encore confirmé/);
   assert.doesNotMatch(h, /<li><b>[^<]*Tendance<\/b>/);
 });
+
+test("07/10 : combinaisons par classe (matières premières, actions) lisibles", () => {
+  assert.equal(combo("rejet_sweep|RANGE|commodity"), "Rejet / piège · Range · Matières premières");
+  assert.equal(combo("tendance_pullback|TREND|xstock"), "Repli dans la tendance · Tendance · Actions");
+  const run = { created_at: new Date().toISOString(), report: { jours: 120, instruments: { a: 1, b: 1, c: 1 }, classes: { crypto: 2, commodity: 1 },
+    periode_hors_echantillon: "x", avant: { trades: 0 }, apres: { trades: 0 }, edges: {} } };
+  assert.match(backtestBlock(run), /2 cryptos, 1 matières premières/);
+});

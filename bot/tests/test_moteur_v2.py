@@ -270,3 +270,30 @@ def test_preuve_mesuree_seulement_sur_les_setups_jouables(settings):
     rep = walk_forward_v2(cands, arrays, s, BTParams(fee_pct=0.05, maker_fee_pct=0.02), folds=5)
     e = rep["edges"][edge_key("A", R.RANGE)]
     assert e["win_rate_pct"] == 100.0 and e["prouve"]
+
+
+
+# ------------------------------------------------------------------ 07/10 : matières premières et actions prouvées à part
+def test_preuve_separee_par_classe(settings):
+    assert edge_key("rejet_sweep", R.RANGE) == "rejet_sweep|RANGE" == edge_key("rejet_sweep", R.RANGE, "crypto")
+    assert edge_key("rejet_sweep", R.RANGE, "commodity") == "rejet_sweep|RANGE|commodity"
+    rg = Regime(R.RANGE, 0.8)
+    q = {"regime": rg, "net_rr": [1.4, 2.0, 2.8]}
+    ok = {"n": 40, "expectancy_r": 0.3, "profit_factor": 1.6, "oos_n": 10, "oos_expectancy_r": 0.2}
+    s = settings.model_copy(update={"v2_edges": {"rejet_sweep|RANGE": ok}})
+    a_or = _a(rg)
+    a_or.inst.asset_class = "commodity"
+    assert kill_switch(_st(), _a(rg), s, q) == []                                   # crypto : prouvé
+    assert any("non démontré" in x for x in kill_switch(_st(), a_or, s, q))          # l'or ne profite pas de la preuve crypto
+    s2 = settings.model_copy(update={"v2_edges": {"rejet_sweep|RANGE|commodity": ok}})
+    assert kill_switch(_st(), a_or, s2, q) == []
+
+
+def test_actions_seulement_bourse_us_ouverte_dans_le_backtest(settings):
+    from kraken_assistant.backtest.runner import keep_like_live
+    settings = settings.model_copy(update={"xstocks_us_hours_only": True})
+    mk = lambda cls, ts: Candidate("k", cls, 0, pd.Timestamp(ts, tz="UTC"), "A", "LONG", 1, 1, 1, (2, 3, 4), 70, 2.0)
+    assert keep_like_live(mk("xstock", "2026-10-07 15:00"), settings)       # mercredi 11 h à New York
+    assert not keep_like_live(mk("xstock", "2026-10-07 03:00"), settings)   # nuit
+    assert not keep_like_live(mk("xstock", "2026-10-10 15:00"), settings)   # samedi
+    assert keep_like_live(mk("crypto", "2026-10-10 03:00"), settings)
