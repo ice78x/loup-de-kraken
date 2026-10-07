@@ -90,7 +90,9 @@ def v2_inputs(sb: Supabase, cooldown_h: float = 0.0) -> dict:
     """Moteur v2 : combinaisons prouvées du dernier backtest walk-forward + stratégies en série de pertes (réel)."""
     out: dict = {}
     try:
-        runs = sb.select("backtest_runs", {"select": "id,created_at,report", "order": "created_at.desc", "limit": "1"})
+        # Les backtests « étude » (BACKTEST_ETUDE=true) servent à explorer : ils n'autorisent jamais de 🟢.
+        runs = sb.select("backtest_runs", {"select": "id,created_at,report", "order": "created_at.desc", "limit": "6"})
+        runs = [r for r in runs if not (r.get("report") or {}).get("etude")]
         edges = ((runs[0].get("report") or {}).get("edges") or {}) if runs else {}
         out["v2_edges"] = {k: v for k, v in edges.items() if isinstance(v, dict)}
         log.info("moteur v2 : %d combinaison(s) testée(s), %d prouvée(s)", len(edges),
@@ -398,7 +400,9 @@ def _main(cmd: str) -> int:
         days = int(os.environ.get("BACKTEST_DAYS") or 120)
         n = int(os.environ.get("BACKTEST_INSTRUMENTS") or 16)
         rep = run_v2(app, days=min(max(days, 30), 365), max_instruments=min(max(n, 3), 40))
-        text = summary_text(rep)
+        if (os.environ.get("BACKTEST_ETUDE") or "").lower() == "true":
+            rep["etude"] = True
+        text = ("ÉTUDE (non utilisée par le scanner)\n" if rep.get("etude") else "") + summary_text(rep)
         print(text, flush=True)
         if os.environ.get("GITHUB_STEP_SUMMARY"):
             with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:

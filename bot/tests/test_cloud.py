@@ -25,7 +25,15 @@ class FakePostgrest:
             if k in ("select", "on_conflict", "columns"):
                 continue
             op, _, val = v.partition(".")
-            cur = row.get(k)
+            if "->>" in k:
+                col, _, sub = k.partition("->>")
+                cur = (row.get(col) or {}).get(sub)
+            else:
+                cur = row.get(k)
+            if op == "is" and val == "null":
+                if cur is not None:
+                    return False
+                continue
             if op == "eq" and str(cur).lower() != val.lower():
                 return False
             if op == "lt" and not (str(cur) < val):
@@ -285,3 +293,12 @@ def test_stops_recents_lus_pour_la_pause():
         {"instrument_key": "futures:PF_ETHUSD", "direction": "LONG", "outcome": "tp3", "resolved_at": now.isoformat()}]
     assert "recent_stops" not in cloud.v2_inputs(sb, 0)                         # règle coupée : rien n'est lu
     assert cloud.v2_inputs(sb, 6)["recent_stops"] == ["futures:PF_WLDUSD|LONG"]  # SOL trop vieux, ETH gagnant
+
+
+def test_backtest_etude_jamais_utilise_pour_autoriser_les_verts():
+    pg = FakePostgrest()
+    sb = Supabase("https://x.supabase.co", "service", transport=httpx.MockTransport(pg.handler))
+    pg.tables["backtest_runs"] = [
+        {"id": 1, "created_at": "2026-10-06T05:53:00Z", "report": {"edges": {"rejet_sweep|RANGE": {"n": 38, "prouve": True}}}},
+        {"id": 2, "created_at": "2026-10-07T10:00:00Z", "report": {"etude": True, "edges": {"tendance_pullback|TREND": {"n": 60}}}}]
+    assert list(cloud.v2_inputs(sb)["v2_edges"]) == ["rejet_sweep|RANGE"]

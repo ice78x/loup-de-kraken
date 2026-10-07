@@ -15,6 +15,9 @@ on:
       instruments:
         description: "nombre de perpétuels crypto (3 à 40, BTC et ETH toujours inclus)"
         default: "16"
+      etude:
+        description: "true = étude seulement (résultat affiché, mais PAS utilisé par le scanner pour autoriser les 🟢)"
+        default: "false"
 
 concurrency:
   group: backtest
@@ -51,5 +54,6 @@ jobs:
           BACKTEST_DAYS: ${{ github.event.inputs.days || '120' }}
           BACKTEST_INSTRUMENTS: ${{ github.event.inputs.instruments || '16' }}
           BACKTEST_SLIPPAGE_PCT: "0.03"
+          BACKTEST_ETUDE: ${{ github.event.inputs.etude || 'false' }}
           USER_AGENT: "loup-de-kraken/1.0 (private club bot)"
         run: python -m kraken_assistant.cloud.run backtest

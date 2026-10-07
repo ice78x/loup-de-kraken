@@ -41,6 +41,7 @@ export function backtestBlock(run, { admin = false } = {}) {
     .sort((a, b) => (b[1].prouve - a[1].prouve) || b[1].n - a[1].n);
   const prouves = edges.filter(([, e]) => e.prouve);
   return `<section class="section"><h2>📊 Backtest du moteur</h2>
+    ${r.etude ? `<p class="bloc small"><b>🔬 Étude :</b> ce backtest sert à explorer. Le bot ne s'en sert pas pour autoriser les 🟢.</p>` : ""}
     <p class="muted">Rejoué sur <b>${Object.keys(r.instruments || {}).length} perpétuels Kraken</b> (vraies bougies 15 min, ${r.jours} jours).
       Mesuré <b>hors échantillon</b> (${esc(r.periode_hors_echantillon)}) : chaque période est jugée avec ce que le bot savait <i>avant</i>.
       Frais et glissement déduits. Lancé ${ago(run.created_at)}.</p>
