@@ -37,11 +37,11 @@ LABELS = {TREND_UP: "Tendance haussière", TREND_DOWN: "Tendance baissière", RA
 
 # Stratégie adaptée à chaque régime : (stratégie, direction autorisée). Tout le reste est refusé.
 ALLOWED: dict[str, set[tuple[str, str]]] = {
-    TREND_UP: {("tendance_pullback", "LONG"), ("cassure_retest", "LONG"), ("rejet_sweep", "LONG")},
-    TREND_DOWN: {("tendance_pullback", "SHORT"), ("cassure_retest", "SHORT"), ("rejet_sweep", "SHORT")},
+    TREND_UP: {("tendance_pullback", "LONG"), ("cassure_retest", "LONG"), ("rejet_sweep", "LONG"), ("canal_donchian", "LONG")},
+    TREND_DOWN: {("tendance_pullback", "SHORT"), ("cassure_retest", "SHORT"), ("rejet_sweep", "SHORT"), ("canal_donchian", "SHORT")},
     RANGE: {("rejet_sweep", "LONG"), ("rejet_sweep", "SHORT")},
-    BREAKOUT_UP: {("cassure_retest", "LONG")},
-    BREAKOUT_DOWN: {("cassure_retest", "SHORT")},
+    BREAKOUT_UP: {("cassure_retest", "LONG"), ("canal_donchian", "LONG")},
+    BREAKOUT_DOWN: {("cassure_retest", "SHORT"), ("canal_donchian", "SHORT")},
 }
 
 
