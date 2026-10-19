@@ -48,6 +48,20 @@ function sig(id, display, direction, status, seed, price, score, strategy, extra
   };
 }
 
+const jour = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+const DEMO_SWING = [
+  { id: 1, display: "PF_XBTUSD", instrument_key: "futures:PF_XBTUSD", asset_class: "crypto", quote: "USD", direction: "LONG", variant: "canal_55_20|trail|long",
+    signal_date: jour(1), signal_close: 100000, atr: 2500, entry_low: 99375, entry_high: 100625, entry_price: null, stop_initial: 95000, stop_current: 95000,
+    status: "ouvert", history: [], created_at: new Date().toISOString(), demo: true },
+  { id: 2, display: "PF_SOLUSD", instrument_key: "futures:PF_SOLUSD", asset_class: "crypto", quote: "USD", direction: "LONG", variant: "canal_55_20|trail|long",
+    signal_date: jour(12), signal_close: 150, atr: 6, entry_low: 148.5, entry_high: 151.5, entry_price: 150.4, stop_initial: 138, stop_current: 151.2,
+    status: "ouvert", max_r: 2.4, days: 12, history: [{ date: jour(2), stop: 147, close: 168 }, { date: jour(1), stop: 151.2, close: 171 }],
+    created_at: new Date(Date.now() - 12 * 864e5).toISOString(), demo: true },
+  { id: 3, display: "PF_ETHUSD", instrument_key: "futures:PF_ETHUSD", asset_class: "crypto", quote: "USD", direction: "LONG", variant: "canal_55_20|trail|long",
+    signal_date: jour(30), signal_close: 3000, atr: 120, entry_low: 2970, entry_high: 3030, entry_price: 3010, stop_initial: 2760, stop_current: 2950,
+    status: "clos", exit_price: 2950, r: -0.24, days: 9, history: [], created_at: new Date(Date.now() - 30 * 864e5).toISOString(), demo: true },
+];
+
 export function demoBackend() {
   const me = { id: "demo-me", pseudo: "Ice", guardrails: false, trade_mode: "futures", balance_eur: 90, risk_pct: 1, max_open_risk_pct: 2,
     max_daily_loss_pct: 3, approved: true, is_admin: true, created_at: ago(240) };
@@ -170,6 +184,10 @@ export function demoBackend() {
     edges: () => ok([{ asset_class: "crypto", strategy: "cassure_retest", status: "non démontré", oos_trades: 0, period: "DÉMO" }]),
     // DÉMO : aucun backtest (en vrai : table backtest_runs remplie par GitHub Actions)
     latestBacktest: () => ok(null),
+    // DÉMO : positions swing fictives (en vrai : table swing_positions remplie par le bot chaque jour)
+    swingPositions: () => ok(DEMO_SWING),
+    swingPosition: (id) => ok(DEMO_SWING.find((p) => String(p.id) === String(id)) || null),
+    latestSwing: () => ok(null),
     settings: () => ok(settings),
     setSetting: (key, value) => { settings.find((s) => s.key === key).value = value; return ok({}); },
     settingsLog: () => ok([{ key: "score_trade", old_value: 55, new_value: 60, created_at: ago(12), profiles: { pseudo: "Nora" } }]),

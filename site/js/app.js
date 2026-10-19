@@ -10,6 +10,7 @@ import * as signal from "./views/signal.js";
 import * as trades from "./views/trades.js";
 import * as trade from "./views/trade.js";
 import * as newtrade from "./views/newtrade.js";
+import * as swing from "./views/swing.js";
 import * as markets from "./views/markets.js";
 import * as chart from "./views/chart.js";
 import * as club from "./views/club.js";
@@ -39,6 +40,7 @@ const NAV = [
 const ROUTES = [
   [/^#?\/?$/, home, "#/"], [/^#\/signal\/(\d+)$/, signal, "#/"], [/^#\/trades$/, trades, "#/trades"],
   [/^#\/trade\/nouveau$/, newtrade, "#/trades"], [/^#\/trade\/nouveau\/(.+)$/, newtrade, "#/trades"], [/^#\/trade\/(\d+)$/, trade, "#/trades"],
+  [/^#\/swing$/, swing, "#/"], [/^#\/swing\/(\d+)$/, swing, "#/"],
   [/^#\/club$/, club, "#/club"], [/^#\/membre\/([\w-]+)$/, club, "#/club"], [/^#\/bot$/, bot, "#/compte"], [/^#\/idees$/, ideas, "#/idees"],
   [/^#\/apprendre$/, learn, "#/apprendre"], [/^#\/(?:marches|graphiques)$/, markets, "#/graphiques"],
   [/^#\/graphiques\/(\w+)$/, markets, "#/graphiques"], [/^#\/graphique\/(.+)$/, chart, "#/graphiques"], [/^#\/compte$/, account, "#/compte"],

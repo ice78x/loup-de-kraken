@@ -110,3 +110,14 @@ await fails(as(U2, "update public.profiles set pseudo_pending = 'x' where id = $
 console.log("✓ pseudo : demande du membre, validation par l'admin");
 console.log("✓ boîte à idées privée : le membre voit les siennes, l'admin les reçoit toutes et répond");
 console.log("\nSCHÉMA OK");
+
+// Positions SWING (19/10) : lisibles par les membres approuvés, jamais écrites depuis le site
+await db.query(`insert into public.swing_positions (instrument_key, display, asset_class, direction, variant, signal_date, signal_close, atr,
+  entry_low, entry_high, stop_initial, stop_current) values ('futures:PF_XBTUSD','PF_XBTUSD','crypto','LONG','canal_55_20|trail|long','2026-10-18',100,5,100,102,92,92)`);
+assert.equal((await as(U1, "select count(*)::int as n from public.swing_positions")).rows[0].n, 1);
+const U3 = "33333333-3333-3333-3333-333333333333";
+await db.query(`insert into auth.users (id, email) values ($1, 'c@x.fr')`, [U3]);
+assert.equal((await as(U3, "select count(*)::int as n from public.swing_positions")).rows[0].n, 0);   // pas encore approuvé
+await as(U1, `update public.swing_positions set stop_current = 1`);                                  // aucune politique : 0 ligne
+assert.equal((await db.query("select stop_current::int as s from public.swing_positions")).rows[0].s, 92);   // aucune écriture membre
+console.log("swing_positions : RLS OK");

@@ -392,6 +392,11 @@ def _main(cmd: str) -> int:
             log.warning("liste des instruments non envoyée : %s", e)
         track_trades(sb, app)
         learn(sb, app)
+        try:  # moteur swing : une fois par jour après la clôture journalière, jamais bloquant pour le scan
+            from ..swing.live import daily_job
+            daily_job(sb, app)
+        except Exception as e:  # noqa: BLE001
+            log.error("swing : tâche journalière en erreur (%s: %s)", type(e).__name__, e)
         cleanup(sb)
     elif cmd == "track":
         track_trades(sb, app)

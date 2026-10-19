@@ -77,9 +77,10 @@ export function tradeForm(host, o) {
         <small id="max-pos">= quantité × prix d'entrée</small></label>
     </div>
 
-    <label class="champ"><span>Stop loss (SL) — facultatif</span><input name="sl" inputmode="decimal" value="${rp(s?.sl)}" placeholder="aucun">
-      <small>Là où tu coupes si ça va mal. Sans stop, tu peux perdre la marge du trade (liquidation), jamais plus.</small></label>
-    <div class="trois">
+    <label class="champ"><span>Stop loss (SL) — ${o.swing ? "stop de départ du bot" : "facultatif"}</span><input name="sl" inputmode="decimal" value="${rp(s?.sl)}" placeholder="aucun">
+      <small>${o.swing ? "Swing : pas d'objectif fixe. Le bot remonte ce stop chaque matin et ton trade le suit (jamais en arrière)."
+        : "Là où tu coupes si ça va mal. Sans stop, tu peux perdre la marge du trade (liquidation), jamais plus."}</small></label>
+    <div class="trois"${o.swing ? ' style="display:none"' : ""}>
       <label class="champ"><span>TP1 · 30 %</span><input name="tp1" inputmode="decimal" value="${rp(s?.tp1)}"></label>
       <label class="champ"><span>TP2 · 40 %</span><input name="tp2" inputmode="decimal" value="${rp(s?.tp2)}"></label>
       <label class="champ"><span>TP3 · 30 %</span><input name="tp3" inputmode="decimal" value="${rp(s?.tp3)}"></label>
@@ -302,6 +303,7 @@ export function tradeForm(host, o) {
         leverage: lev, qty: plan.qty, qty_remaining: plan.qty, risk_eur: +plan.lossAtSlEur.toFixed(4),
         eur_per_quote: o.eurPerQuote, fee_pct: x.entryIsMaker ? fees.maker : fees.taker, balance_at_entry: +o.me.balance_eur,
         realized_pnl_eur: -(plan.entryFeeEur || 0), strategy: s?.strategy || "manuel", notes: f.elements.notes.value || null,
+        ...(o.swing ? { swing_id: o.swing.id } : {}),
         events: [{ at: new Date().toISOString(), text: `Ouverture ${mode === "reel" ? "réelle" : "paper"} à ${x.entry} · ${+plan.qty.toPrecision(6)} ${nomActif(o.inst)} · x${lev}` }],
       });
       toast("Trade enregistré. Le bot le suivra à chaque scan.");

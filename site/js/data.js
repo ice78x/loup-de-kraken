@@ -68,6 +68,21 @@ function supabaseBackend() {
       if (error) return null;
       return (data || []).find((r) => r.report?.type !== "swing") || null;   // le backtest swing a son propre bloc
     },
+    // --- swing (trades de plusieurs jours) : positions du bot + dernier backtest swing
+    swingPositions: async (limit = 60) => {
+      const { data, error } = await sb.from("swing_positions").select("*").order("created_at", { ascending: false }).limit(limit);
+      return error ? [] : data || [];   // table absente tant que schema.sql n'est pas relancé
+    },
+    swingPosition: async (id) => {
+      const { data, error } = await sb.from("swing_positions").select("*").eq("id", id).limit(1);
+      return error ? null : data?.[0] || null;
+    },
+    latestSwing: async () => {
+      const { data, error } = await sb.from("backtest_runs").select("id,created_at,summary,report").order("created_at", { ascending: false }).limit(10);
+      if (error) return null;
+      const runs = (data || []).filter((r) => r.report?.type === "swing");
+      return runs.find((r) => !r.report?.etude) || runs[0] || null;
+    },
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),
     settingsLog: () => q(sb.from("bot_settings_log").select("*,profiles:changed_by(pseudo)").order("created_at", { ascending: false }).limit(20)),

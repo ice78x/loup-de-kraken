@@ -82,6 +82,6 @@ export const num = (v) => { const x = parseFloat(String(v).replace(",", ".").rep
 
 export const DIR = { LONG: "LONG ↑ achat", SHORT: "SHORT ↓ vente" };
 export const STRAT = {
-  cassure_retest: "Cassure + retest", rejet_sweep: "Rejet / piège", tendance_pullback: "Repli dans la tendance", canal_donchian: "Cassure de canal (Turtle)",
+  cassure_retest: "Cassure + retest", rejet_sweep: "Rejet / piège", tendance_pullback: "Repli dans la tendance", canal_donchian: "Cassure de canal (Turtle)", swing: "Swing (plusieurs jours)",
   news_momentum: "Réaction à une news", manuel: "Trade manuel",
 };

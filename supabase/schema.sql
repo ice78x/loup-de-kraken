@@ -413,6 +413,40 @@ from public.signal_outcomes
 where created_at > now() - interval '120 days'
 group by status, strategy, asset_class;
 
+-- Positions SWING du bot (19/10) : trades de plusieurs jours en bougies journalières, stop suiveur mis à jour
+-- chaque jour par le bot (service key). Lecture par les membres approuvés. Aucun ordre réel.
+create table if not exists public.swing_positions (
+  id             bigint generated always as identity primary key,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  instrument_key text not null,
+  display        text not null,
+  asset_class    text not null,
+  quote          text,
+  direction      text not null check (direction in ('LONG', 'SHORT')),
+  variant        text not null,
+  signal_date    date not null,
+  signal_close   numeric not null,
+  atr            numeric not null,
+  entry_low      numeric not null,
+  entry_high     numeric not null,
+  entry_price    numeric,
+  stop_initial   numeric not null,
+  stop_current   numeric not null,
+  status         text not null default 'ouvert' check (status in ('ouvert', 'clos', 'refuse')),
+  refus          text,
+  exit_price     numeric,
+  exit_date      date,
+  r              numeric,
+  max_r          numeric,
+  days           integer,
+  history        jsonb not null default '[]'::jsonb,
+  unique (instrument_key, signal_date, variant)
+);
+alter table public.swing_positions add column if not exists entry_price numeric;
+create index if not exists swing_positions_status_idx on public.swing_positions (status, created_at desc);
+alter table public.trades add column if not exists swing_id bigint references public.swing_positions(id) on delete set null;
+
 -- ---------------------------------------------------------------------
 -- 5. Classement (calculé en direct)
 -- ---------------------------------------------------------------------
@@ -447,6 +481,7 @@ alter table public.scan_requests   enable row level security;
 alter table public.signal_outcomes enable row level security;
 alter table public.backtest_runs   enable row level security;
 alter table public.telegram_subscribers enable row level security;
+alter table public.swing_positions enable row level security;
 
 do $$
 declare r record;
@@ -474,6 +509,7 @@ create policy "lecture instruments" on public.instruments for select using (publ
 create policy "lecture edges" on public.bot_edges for select using (public.is_approved());
 create policy "lecture résultats signaux" on public.signal_outcomes for select using (public.is_approved());
 create policy "lecture backtests" on public.backtest_runs for select using (public.is_approved());
+create policy "lecture positions swing" on public.swing_positions for select using (public.is_approved());
 create policy "admin voit les abonnés Telegram" on public.telegram_subscribers for select using (public.is_admin());
 
 -- Trades : tout le club voit l'historique, chacun ne modifie que les siens

@@ -36,6 +36,20 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   Étude du 13/10 (180 j) : perdante (−0,16R/trade, hors échantillon −0,44R) → coupée en direct (`bot_settings.disabled_strategies`),
   toujours mesurée par le backtest du dimanche (la détection du backtest ignore `disabled_strategies`).
   Au plus 2 🟢 par scan, 1 par sens sur les cryptos. L'ancien score reste calculé (`legacy_score`) pour la comparaison AVANT/APRÈS.
+- **SWING (19/10, moteur principal)** : `bot/.../swing/` — trades de plusieurs jours en bougies journalières (méthode Turtle/Donchian).
+  `rules.py` (variantes FIXÉES à l'avance : canal 20/10 et 55/20 jours, stop initial 2 × ATR20 puis stop suiveur = plus bas/haut
+  des `exit` derniers jours, jamais reculé ; gestion trail ou 30 % à +2R ; LONG+SHORT ou LONG seul), `backtest.py`
+  (entrée à l'ouverture du lendemain, frais + glissement + funding Kraken RÉEL horaire `daily_funding`, walk-forward par classe,
+  portefeuille aux règles du club ≤ 2 % de risque ouvert), `runner.py` + workflow `swing.yml` (manuel + dimanche 5 h UTC) →
+  `backtest_runs` avec `report.type = "swing"` (ignoré par `v2_inputs`, et `latestBacktest` du site l'écarte).
+  `live.py` `daily_job` (appelé à chaque scan, travaille UNE fois par jour quand la bougie 1j d'hier est clôturée, marqueur
+  `bot_settings.swing_last_day`) : rejoue les positions ouvertes (stop touché / stop remonté), publie les nouveaux signaux SEULEMENT
+  pour une classe prouvée par le dernier backtest swing non « étude » (variante retenue), refuse si 2 % de risque ouvert,
+  coupe-circuit réel (≥ 10 positions closes et R moyen < −0,3), Telegram (nouvelle position / stop à déplacer / fin),
+  stop des trades membres liés (`trades.swing_id`) suivi (`sync_member_stops`). Table `swing_positions` (lecture membres, écriture bot).
+  Site : `site/js/swing.js` (états d'une position, carte, bloc backtest), `views/swing.js` (`#/swing`, `#/swing/<id>` + formulaire),
+  section en tête de l'accueil. Résultat du 19/10 (crypto, 2022→2026) : canal 55/20 trail LONG seul ≈ +0,8R/trade, hors échantillon
+  +0,85R, mais 2026 ≈ −0,04R (dépend du marché haussier) et biais de survie (univers = liquides aujourd'hui) → paper d'abord.
 - **Backtest walk-forward** : `backtest/walkforward.py` (AVANT ancien moteur / APRÈS v2, edges appris seulement sur le passé, frais + glissement),
   `backtest/runner.py` (univers liquide : cryptos + 10 matières premières + 12 actions, actions seulement bourse US ouverte `keep_like_live` ; backfill Kraken Futures, contexte BTC/ETH heure par heure). Lancé par `.github/workflows/backtest.yml`
   (manuel ou bouton admin du site via `netlify/functions/scan.mjs` mode `backtest`, + dimanche). Résultats affichés par `site/js/backtest.js`.

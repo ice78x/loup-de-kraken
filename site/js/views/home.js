@@ -6,6 +6,8 @@ import { FINI, PROCHE_PCT, SEUIL_SOLIDE, espace, ordre, setupCard } from "../set
 import { riskBudget } from "../sizing.js";
 import { bilanCompte, soldeBloc, soldeLive } from "../solde.js";
 import { STRAT, ago, busy, cls, dt, esc, eur, nextScan, pct, pq, px, sym, toast } from "../ui.js";
+import { prices } from "../market.js";
+import { refPos, swingCard } from "../swing.js";
 
 const VERDICT = {
   TRADE: (n) => [`${n} trade${n > 1 ? "s" : ""} validé${n > 1 ? "s" : ""}`, "Le bot a trouvé une occasion propre. Lis le ticket avant d'entrer."],
@@ -59,9 +61,13 @@ const ATTENTE_MAX = 8 * 60_000; // au-delà, on prévient que GitHub est lent
 
 export async function render(main, ctx) {
   const me = ctx.me;
-  const [scans, mine, newIdeas, membres] = await Promise.all([backend.recentScans(2), backend.trades({ userId: me.id, limit: 300 }),
+  const [scans, mine, newIdeas, membres, swings] = await Promise.all([backend.recentScans(2), backend.trades({ userId: me.id, limit: 300 }),
     me.is_admin ? backend.unseenIdeas().catch(() => 0) : Promise.resolve(0),
-    me.is_admin ? backend.members().catch(() => []) : Promise.resolve([])]);
+    me.is_admin ? backend.members().catch(() => []) : Promise.resolve([]),
+    backend.swingPositions(10).catch(() => [])]);
+  // Swing (plusieurs jours) : positions ouvertes du bot, en premier sur l'accueil (c'est là qu'il y a quelque chose à faire).
+  const swingOuvertes = swings.filter((p) => p.status === "ouvert");
+  const swingPx = swingOuvertes.length ? await prices(swingOuvertes.map(refPos), { fx: false }).catch(() => null) : null;
   const aValider = membres.filter((m) => !m.approved).length;
   const pseudos = membres.filter((m) => m.approved && m.pseudo_pending && m.id !== me.id).length;
   // Les 2 derniers scans : tout le dernier, plus les setups du précédent qui n'y sont plus (même paire + même sens = on garde le plus récent).
@@ -120,6 +126,12 @@ export async function render(main, ctx) {
         <p class="small muted" id="verdict-bot">🤖 Bot : ${scan ? icon + " " : ""}<b id="verdict-titre">${esc(titre)}</b> · <span id="verdict-sous">${esc(sous)}</span><br>
           ${scan ? `Dernier scan ${ago(scan.created_at)} (${dt(scan.created_at)})${prev ? ` · précédent ${dt(prev.created_at).split(" ")[1] || dt(prev.created_at)}` : ""} · ` : ""}prochain vers ${nextScan()}</p>
       </div>
+    </section>
+
+    <section class="section">
+      <div class="ligne entre"><h2 style="margin:0">📈 Swing (plusieurs jours)</h2><a class="small" href="#/swing">tout voir →</a></div>
+      ${swingOuvertes.length ? `<div class="grille" style="margin-top:8px">${swingOuvertes.slice(0, 4).map((p) => swingCard(p, swingPx?.get(refPos(p))?.last ?? null)).join("")}</div>`
+        : `<p class="small muted" style="margin:6px 0 0">Aucune position swing en cours : rien à faire. Le bot vérifie chaque nuit (2 h à Paris).</p>`}
     </section>
 
     <dl class="chiffres">
