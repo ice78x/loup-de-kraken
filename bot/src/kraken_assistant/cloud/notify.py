@@ -111,7 +111,8 @@ def config() -> tuple[str, list[str]] | None:
 # --------------------------------------------------------------------------------------- abonnements automatiques
 SUBS = "telegram_subscribers"
 OFFSET_KEY = "telegram_offset"
-HELLO = ("✅ <b>Bienvenue sur Le Loup de Kraken</b>\nTu recevras ici chaque 🟢 trade validé et chaque ⏳ pré-alerte du bot.\n"
+HELLO = ("✅ <b>Bienvenue sur Le Loup de Kraken</b>\nTu recevras ici chaque 🟢 trade validé, chaque ⏳ pré-alerte, et pour les "
+         "positions <b>swing</b> (plusieurs jours) le nouveau stop chaque matin.\n"
          "Pas de message = pas de trade propre : c'est normal.\nPour arrêter : envoie /stop.\n"
          "<i>Probabilité, pas garantie. Entraîne-toi en paper avant d'engager de l'argent.</i>")
 BYE = "👋 C'est noté, tu ne recevras plus les signaux. Pour revenir : envoie /start."
