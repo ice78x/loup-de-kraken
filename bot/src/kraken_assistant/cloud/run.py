@@ -92,7 +92,8 @@ def v2_inputs(sb: Supabase, cooldown_h: float = 0.0) -> dict:
     try:
         # Les backtests « étude » (BACKTEST_ETUDE=true) servent à explorer : ils n'autorisent jamais de 🟢.
         runs = sb.select("backtest_runs", {"select": "id,created_at,report", "order": "created_at.desc", "limit": "6"})
-        runs = [r for r in runs if not (r.get("report") or {}).get("etude")]
+        runs = [r for r in runs if not (r.get("report") or {}).get("etude")
+                and (r.get("report") or {}).get("type") != "swing"]
         edges = ((runs[0].get("report") or {}).get("edges") or {}) if runs else {}
         out["v2_edges"] = {k: v for k, v in edges.items() if isinstance(v, dict)}
         log.info("moteur v2 : %d combinaison(s) testée(s), %d prouvée(s)", len(edges),
@@ -403,6 +404,19 @@ def _main(cmd: str) -> int:
         if (os.environ.get("BACKTEST_ETUDE") or "").lower() == "true":
             rep["etude"] = True
         text = ("ÉTUDE (non utilisée par le scanner)\n" if rep.get("etude") else "") + summary_text(rep)
+        print(text, flush=True)
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+                f.write("```\n" + text + "\n```\n")
+        sb.insert("backtest_runs", {"days": days, "summary": text, "report": json.loads(json.dumps(rep, default=str))})
+    elif cmd == "swing_backtest":
+        from ..swing.runner import run_swing, summary_text as swing_text
+        days = int(os.environ.get("BACKTEST_DAYS") or 1500)
+        n = int(os.environ.get("BACKTEST_INSTRUMENTS") or 40)
+        rep = run_swing(app, days=min(max(days, 365), 2500), crypto=min(max(n, 3), 80))
+        if (os.environ.get("BACKTEST_ETUDE") or "").lower() == "true":
+            rep["etude"] = True
+        text = swing_text(rep)
         print(text, flush=True)
         if os.environ.get("GITHUB_STEP_SUMMARY"):
             with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:

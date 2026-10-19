@@ -302,3 +302,12 @@ def test_backtest_etude_jamais_utilise_pour_autoriser_les_verts():
         {"id": 1, "created_at": "2026-10-06T05:53:00Z", "report": {"edges": {"rejet_sweep|RANGE": {"n": 38, "prouve": True}}}},
         {"id": 2, "created_at": "2026-10-07T10:00:00Z", "report": {"etude": True, "edges": {"tendance_pullback|TREND": {"n": 60}}}}]
     assert list(cloud.v2_inputs(sb)["v2_edges"]) == ["rejet_sweep|RANGE"]
+
+
+def test_backtest_swing_jamais_utilise_par_le_moteur_intraday():
+    pg = FakePostgrest()
+    sb = Supabase("https://x.supabase.co", "service", transport=httpx.MockTransport(pg.handler))
+    pg.tables["backtest_runs"] = [
+        {"id": 1, "created_at": "2026-10-18T06:45:00Z", "report": {"edges": {"rejet_sweep|RANGE": {"n": 22}}}},
+        {"id": 2, "created_at": "2026-10-19T10:00:00Z", "report": {"type": "swing", "par_classe": {}}}]
+    assert list(cloud.v2_inputs(sb)["v2_edges"]) == ["rejet_sweep|RANGE"]

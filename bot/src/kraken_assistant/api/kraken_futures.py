@@ -64,6 +64,11 @@ class KrakenFuturesClient:
             raise KrakenAPIError("charts", f"aucune bougie pour {symbol}")
         return candles
 
+    def historical_funding(self, symbol: str) -> list[dict]:
+        """Taux de funding historiques d'un perpétuel (relativeFundingRate = taux relatif PAR HEURE, docs Kraken)."""
+        return self._check("historical-funding-rates", self.http.request(
+            "GET", "/derivatives/api/v3/historical-funding-rates", params={"symbol": symbol})).get("rates", [])
+
     # --------------------------------------------------------------- private
     def private(self, method: str, path: str, data: dict | None = None, *, retry: bool = True) -> Any:
         if not self.s.has_futures_keys:

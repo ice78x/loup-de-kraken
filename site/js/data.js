@@ -64,9 +64,9 @@ function supabaseBackend() {
     edges: () => q(sb.from("bot_edges").select("*").order("asset_class")),
     // Dernier backtest walk-forward du moteur v2 (null si aucun, ou si schema.sql n'a pas été relancé)
     latestBacktest: async () => {
-      const { data, error } = await sb.from("backtest_runs").select("id,created_at,days,summary,report").order("created_at", { ascending: false }).limit(1);
+      const { data, error } = await sb.from("backtest_runs").select("id,created_at,days,summary,report").order("created_at", { ascending: false }).limit(6);
       if (error) return null;
-      return data?.[0] || null;
+      return (data || []).find((r) => r.report?.type !== "swing") || null;   // le backtest swing a son propre bloc
     },
     settings: () => q(sb.from("bot_settings").select("*").order("key")),
     setSetting: (key, value) => q(sb.from("bot_settings").update({ value }).eq("key", key)),

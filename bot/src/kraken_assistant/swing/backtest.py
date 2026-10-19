@@ -1,0 +1,227 @@
+"""Backtest SWING sur bougies journalières Kraken (perpétuels), avec frais, glissement et FUNDING réel.
+
+Simulation jour par jour, une position par instrument :
+  - entrée à l'ouverture du lendemain du signal (+ glissement), frais taker ;
+  - stop touché dans la journée → sortie au stop (ou à l'ouverture si le prix a sauté le stop), + glissement ;
+  - « tp30 » : 30 % vendus à +2R (ordre limite, frais maker), puis stop au point mort ;
+  - funding Kraken payé/reçu chaque jour sur la part restante (LONG paie si le taux est positif) ;
+  - stop suiveur mis à jour à chaque clôture (canal de sortie), jamais reculé.
+Walk-forward : la variante jouée sur une période est choisie avec les trades TERMINÉS avant cette période.
+Aucune donnée inventée : funding absent → compté 0 et signalé (couverture en %).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+import pandas as pd
+
+from ..backtest.engine import BTTrade, metrics
+from . import rules as R
+
+
+@dataclass
+class SwingParams:
+    fee_taker_pct: float = 0.05
+    fee_maker_pct: float = 0.02
+    slippage_pct: float = 0.05
+    folds: int = 5
+    min_trades_select: int = 30
+    min_oos_trades: int = 20
+    min_pf: float = 1.2
+    open_risk_cap: float = 2.0      # % du capital (règle du club), 1 % par trade
+
+
+@dataclass
+class SwingTrade(BTTrade):
+    days: int = 0
+    funding_r: float = 0.0
+    risk_path: dict = field(default_factory=dict)   # date (jour) → part du risque initial encore exposée (0..1)
+
+
+def daily_funding(rates: list[dict], index: pd.DatetimeIndex) -> pd.Series:
+    """Taux de funding Kraken (relatifs, PAR HEURE) → coût relatif par jour UTC aligné sur `index`.
+    Chaque taux s'applique jusqu'au taux suivant (au plus 24 h) : coût = Σ taux × durée en heures."""
+    if not rates:
+        return pd.Series(np.nan, index=index)
+    df = pd.DataFrame([{"ts": pd.Timestamp(r["timestamp"]), "rate": float(r.get("relativeFundingRate") or 0.0)}
+                       for r in rates if r.get("timestamp") is not None]).sort_values("ts")
+    if df.empty:
+        return pd.Series(np.nan, index=index)
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    nxt = df["ts"].shift(-1)
+    hours = ((nxt - df["ts"]).dt.total_seconds() / 3600).clip(upper=24)
+    hours = hours.fillna(float(hours.median()) if hours.notna().any() else 1.0)   # dernier taux : pas habituel
+    df["cost"] = df["rate"] * hours
+    per_day = df.groupby(df["ts"].dt.floor("D"))["cost"].sum()
+    out = per_day.reindex(index.floor("D"))
+    out.index = index
+    return out
+
+
+def simulate(df: pd.DataFrame, funding: pd.Series | None, key: str, asset_class: str, variant: str, mgmt: str,
+             sides: str, p: SwingParams) -> list[SwingTrade]:
+    v = R.VARIANTS[variant]
+    ch = R.channels(df, v["entry"], v["exit"])
+    o, h, l, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+    hi_e, lo_e = ch["hi_entry"].to_numpy(float), ch["lo_entry"].to_numpy(float)
+    lo_x, hi_x, atr = ch["lo_exit"].to_numpy(float), ch["hi_exit"].to_numpy(float), ch["atr"].to_numpy(float)
+    fund = (funding.to_numpy(float) if funding is not None else np.full(len(df), np.nan))
+    idx = df.index
+    slip, ft, fm = p.slippage_pct / 100, p.fee_taker_pct / 100, p.fee_maker_pct / 100
+    name = R.combo_name(variant, mgmt, sides)
+    trades: list[SwingTrade] = []
+    pos = None
+    pending = None
+    start = v["entry"] + R.ATR_N + 1
+    for i in range(start, len(df)):
+        if pending is not None and pos is None:
+            sign = 1 if pending == "LONG" else -1
+            entry = o[i] * (1 + sign * slip)
+            stop0 = entry - sign * R.STOP_N * atr[i - 1]
+            risk = abs(entry - stop0)
+            if risk > 0 and np.isfinite(risk):
+                pos = {"dir": pending, "sign": sign, "entry": entry, "stop": stop0, "risk": risk, "rem": 1.0,
+                       "r": -ft * entry / risk, "fund_r": 0.0, "i0": i, "partial": False, "path": {}}
+            pending = None
+        if pos is not None:
+            sign, entry, risk = pos["sign"], pos["entry"], pos["risk"]
+            adverse = l[i] if sign > 0 else h[i]
+            if sign * (adverse - pos["stop"]) <= 0:
+                px = (min(o[i], pos["stop"]) if sign > 0 else max(o[i], pos["stop"])) * (1 - sign * slip)
+                pos["r"] += pos["rem"] * (sign * (px - entry) - ft * px) / risk
+                trades.append(_close(pos, i, idx, key, asset_class, name, "stop"))
+                pos = None
+            else:
+                if mgmt == "tp30" and not pos["partial"]:
+                    tp = entry + sign * R.TP_PARTIAL_R * risk
+                    fav = h[i] if sign > 0 else l[i]
+                    if sign * (fav - tp) >= 0:
+                        px = tp if sign * (o[i] - tp) < 0 else o[i]
+                        pos["r"] += R.TP_PARTIAL_SHARE * (sign * (px - entry) - fm * px) / risk
+                        pos["rem"] -= R.TP_PARTIAL_SHARE
+                        pos["partial"] = True
+                        pos["stop"] = max(pos["stop"], entry) if sign > 0 else min(pos["stop"], entry)
+                if np.isfinite(fund[i]):
+                    f = pos["rem"] * sign * fund[i] * c[i] / risk
+                    pos["r"] -= f
+                    pos["fund_r"] -= f
+                trail = lo_x[i] if sign > 0 else hi_x[i]
+                if np.isfinite(trail):
+                    pos["stop"] = max(pos["stop"], trail) if sign > 0 else min(pos["stop"], trail)
+                pos["path"][idx[i].normalize()] = pos["rem"] * max(0.0, sign * (entry - pos["stop"])) / risk
+        if pos is None and pending is None and i + 1 < len(df):
+            if np.isfinite(hi_e[i]) and c[i] > hi_e[i] and not c[i - 1] > hi_e[i - 1]:
+                pending = "LONG"
+            elif sides == "both" and np.isfinite(lo_e[i]) and c[i] < lo_e[i] and not c[i - 1] < lo_e[i - 1]:
+                pending = "SHORT"
+    if pos is not None:
+        sign = pos["sign"]
+        px = c[-1] * (1 - sign * slip)
+        pos["r"] += pos["rem"] * (sign * (px - pos["entry"]) - ft * px) / pos["risk"]
+        trades.append(_close(pos, len(df) - 1, idx, key, asset_class, name, "fin de données"))
+    return trades
+
+
+def _close(pos, i, idx, key, asset_class, name, why) -> SwingTrade:
+    return SwingTrade(key, name, pos["dir"], idx[pos["i0"]], idx[i], float(pos["r"]), why, "", asset_class, 0.0,
+                      days=int(i - pos["i0"]) + 1, funding_r=float(pos["fund_r"]), risk_path=pos["path"])
+
+
+def all_trades(data: dict[str, tuple[str, pd.DataFrame, pd.Series | None]], p: SwingParams) -> dict[str, list[SwingTrade]]:
+    """{combo: trades sur tous les instruments}. data = {key: (classe, bougies 1j, funding/jour)}."""
+    out: dict[str, list[SwingTrade]] = {}
+    for variant in R.VARIANTS:
+        for mgmt in R.MGMT:
+            for sides in R.SIDES:
+                name = R.combo_name(variant, mgmt, sides)
+                out[name] = [t for key, (cls, df, fund) in data.items()
+                             for t in simulate(df, fund, key, cls, variant, mgmt, sides, p)]
+    return out
+
+
+def _stats(trades: list[SwingTrade]) -> dict:
+    if not trades:
+        return {"n": 0}
+    rs = [t.r for t in trades]
+    w, lo = [r for r in rs if r > 0], [r for r in rs if r <= 0]
+    return {"n": len(rs), "expectancy_r": round(float(np.mean(rs)), 3), "win_rate_pct": round(len(w) / len(rs) * 100, 1),
+            "profit_factor": round(sum(w) / -sum(lo), 2) if lo and sum(lo) < 0 else (99.0 if w else None),
+            "jours_moyens": round(float(np.mean([t.days for t in trades])), 1),
+            "funding_r_moyen": round(float(np.mean([t.funding_r for t in trades])), 3),
+            "meilleur_r": round(max(rs), 2), "pire_r": round(min(rs), 2)}
+
+
+def by_year(trades: list[SwingTrade]) -> dict:
+    out: dict[str, list[SwingTrade]] = {}
+    for t in trades:
+        out.setdefault(str(t.entry_ts.year), []).append(t)
+    return {y: _stats(ts) for y, ts in sorted(out.items())}
+
+
+def portfolio(trades: list[SwingTrade], cap_pct: float) -> list[SwingTrade]:
+    """Règles du club : 1 % par trade, risque ouvert cumulé ≤ cap_pct (risque d'un trade = distance encore exposée
+    jusqu'à son stop actuel ; un stop au point mort libère la place), une position par instrument."""
+    taken: list[SwingTrade] = []
+    for t in sorted(trades, key=lambda x: (x.entry_ts, x.key)):
+        day = t.entry_ts.normalize()
+        open_ = [x for x in taken if x.entry_ts <= t.entry_ts < x.exit_ts]
+        if any(x.key == t.key for x in open_):
+            continue
+        prev = day - pd.Timedelta(days=1)
+        used = sum(x.risk_path.get(prev, 1.0) for x in open_)
+        if used + 1.0 <= cap_pct + 1e-9:
+            taken.append(t)
+    return taken
+
+
+def walk_forward(trades_by_combo: dict[str, list[SwingTrade]], p: SwingParams) -> dict:
+    allt = [t for ts in trades_by_combo.values() for t in ts]
+    if not allt:
+        return {"message": "aucun trade — pas de statistique"}
+    t0, t1 = min(t.entry_ts for t in allt), max(t.exit_ts for t in allt)
+    cuts = list(pd.date_range(t0, t1, periods=p.folds + 1))
+    oos: list[SwingTrade] = []
+    rows = []
+    for k in range(1, p.folds):
+        start, end = cuts[k], cuts[k + 1]
+        best, best_e = None, None
+        for name, ts in trades_by_combo.items():
+            past = [t for t in ts if t.exit_ts < start]
+            if len(past) < p.min_trades_select:
+                continue
+            e = float(np.mean([t.r for t in past]))
+            if best_e is None or e > best_e:
+                best, best_e = name, e
+        played = [t for t in trades_by_combo.get(best, []) if start <= t.entry_ts < end] if best and best_e > 0 else []
+        oos += played
+        rows.append({"debut": f"{start:%Y-%m-%d}", "fin": f"{end:%Y-%m-%d}", "variante": best,
+                     "esperance_passee": None if best_e is None else round(best_e, 3),
+                     "joue": bool(best and best_e > 0), **{"oos": _stats(played)}})
+    return {"periode_hors_echantillon": f"{cuts[1]:%Y-%m-%d} → {cuts[-1]:%Y-%m-%d}", "tranches": rows,
+            "oos": _stats(oos), "oos_trades": oos}
+
+
+def report(data: dict[str, tuple[str, pd.DataFrame, pd.Series | None]], p: SwingParams) -> dict:
+    trades = all_trades(data, p)
+    classes = sorted({cls for cls, _, _ in data.values()})
+    rep: dict = {"type": "swing", "variantes": {}, "par_classe": {}}
+    for name, ts in trades.items():
+        rep["variantes"][name] = {"tout": _stats(ts), **{cls: _stats([t for t in ts if t.asset_class == cls]) for cls in classes}}
+    for cls in classes:
+        by = {name: [t for t in ts if t.asset_class == cls] for name, ts in trades.items()}
+        wf = walk_forward(by, p)
+        oos = wf.pop("oos_trades", [])
+        final = max(((n, ts) for n, ts in by.items() if len(ts) >= p.min_trades_select),
+                    key=lambda x: float(np.mean([t.r for t in x[1]])), default=(None, []))
+        fs = _stats(final[1])
+        o = wf.get("oos", {})
+        prouve = bool(final[0] and fs.get("expectancy_r", 0) > 0 and (fs.get("profit_factor") or 0) >= p.min_pf
+                      and o.get("n", 0) >= p.min_oos_trades and o.get("expectancy_r", 0) > 0)
+        port = portfolio(oos, p.open_risk_cap) if oos else []
+        rep["par_classe"][cls] = {
+            "walk_forward": wf, "variante_retenue": final[0], "stats_variante": fs, "par_annee": by_year(final[1]),
+            "prouve": prouve,
+            "portefeuille_club": metrics(port, period=wf.get("periode_hors_echantillon", "")) if port else {"trades": 0},
+        }
+    return rep
