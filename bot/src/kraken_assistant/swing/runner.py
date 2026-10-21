@@ -72,6 +72,15 @@ def summary_text(rep: dict) -> str:
                    f"→ {'PROUVÉ' if c.get('prouve') else 'non prouvé'}")
         for y, st in c.get("par_annee", {}).items():
             out.append(f"    {y} : {st.get('n')} trades {st.get('expectancy_r', 0):+.3f}R")
+        for name, d in c.get("variantes_detail", {}).items():
+            o = d.get("hors_echantillon", {})
+            out.append(f"    variante {name} : hors échantillon {o.get('n', 0)} trades {o.get('expectancy_r', 0) or 0:+.3f}R "
+                       f"→ {'prouvée' if d.get('prouve') else 'non prouvée'}")
+        for k, sc in c.get("scenarios_club", {}).items():
+            if sc.get("trades"):
+                out.append(f"    scénario club {k:<22} {sc['trades']:>4} trades ({sc['trades_par_mois']}/mois) "
+                           f"{sc['expectancy_r']:+.3f}R · capital 100 → {sc['capital_final']:.0f} · pire baisse {sc['max_drawdown_pct']:.1f} % "
+                           f"· pire série {sc['pire_serie_pertes']}")
     out.append("Toutes les variantes (tout l'historique) :")
     for name, v in rep.get("variantes", {}).items():
         t = v.get("tout", {})

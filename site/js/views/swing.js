@@ -79,5 +79,7 @@ async function detail(main, ctx, id) {
   if (known) Object.assign(inst, { base: known.base, can_short: known.can_short, lot_decimals: known.lot_decimals, pair_decimals: known.pair_decimals, ordermin: known.ordermin });
   const epq = eurPerQuote(inst.quote, px);
   if (!epq) { main.querySelector("#form").innerHTML = '<p class="alerte rouge">Taux de conversion indisponible : réessaie dans un moment.</p>'; return; }
-  tradeForm(main.querySelector("#form"), { me: ctx.me, trades: mine, inst, signal: sig, swing: p, price, eurPerQuote: epq, levRef: lev, go: ctx.go });
+  const risque = +(p.history || [])[0]?.risque_pct || null;   // risque conseillé par le bot pour le swing (0,5 % ou 1 %)
+  tradeForm(main.querySelector("#form"), { me: ctx.me, trades: mine, inst, signal: sig, swing: p, price, eurPerQuote: epq, levRef: lev,
+    riskPct: risque, go: ctx.go });
 }

@@ -89,3 +89,25 @@ def test_messages_simples():
     p = _pos(r=1.8, exit_price=120.0)
     assert "SWING LONG BTC" in L.msg_new(p) and "Paper" in L.msg_new(p)
     assert "+1,80 R" in L.msg_close(p).replace(".", ",")
+
+
+def test_deux_canaux_prouves_et_demi_risque(monkeypatch):
+    pg = FakePostgrest()
+    sb = Supabase("https://x.supabase.co", "service", transport=httpx.MockTransport(pg.handler))
+    rng = np.random.default_rng(2)
+    # cassure du plus haut de 20 jours mais PAS de 55 jours : seule la variante 20 jours donne un signal
+    closes = list(130 + rng.uniform(-1, 1, 40)) + list(100 + rng.uniform(-1, 1, 40)) + [104.0]
+    df = _bars(closes, start="2026-07-30")
+    insts = [NS(key=f"futures:PF_{c}USD", display=f"PF_{c}USD", asset_class="crypto", quote="USD", venue="futures", symbol=f"PF_{c}USD")
+             for c in ("XBT", "A", "B", "C", "D", "E")]
+    app = NS(discovery=NS(discover=lambda: insts), settings=NS(swing_risk_pct=0.5, swing_universe=40))
+    monkeypatch.setattr(L, "_daily", lambda app, i: df)
+    monkeypatch.setattr("kraken_assistant.backtest.runner.pick_universe", lambda app, n, classes=None: insts)
+    pg.tables["backtest_runs"] = [{"id": 9, "created_at": "2026-10-18T05:00:00Z", "report": {"type": "swing", "par_classe": {
+        "crypto": {"variante_retenue": "canal_55_20|trail|long", "prouve": True,
+                   "variantes_prouvees": ["canal_20_10|trail|long", "canal_55_20|trail|long"]}}}}]
+    out = L.daily_job(sb, app, datetime(2026, 10, 19, 0, 5, tzinfo=timezone.utc))
+    rows = pg.tables["swing_positions"]
+    assert all(r["variant"] == "canal_20_10|trail|long" for r in rows)
+    assert out["nouvelles"] == 4 and out["refusees"] == 2                      # 0,5 % chacune → 4 dans les 2 %
+    assert rows[0]["history"][0]["risque_pct"] == 0.5

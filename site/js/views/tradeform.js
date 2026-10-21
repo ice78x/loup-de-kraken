@@ -313,7 +313,7 @@ export function tradeForm(host, o) {
 
   // Signal : on pré-remplit la quantité qui correspond à ton risque habituel (modifiable).
   if (s) {
-    const qq = qtyForRisk(base(), Math.min(+o.me.risk_pct || 1, Math.max(0.01, budget.availablePct)));
+    const qq = qtyForRisk(base(), Math.min(o.riskPct ?? (+o.me.risk_pct || 1), Math.max(0.01, budget.availablePct)));
     if (qq) f.elements.qty.value = r6(qq);
   }
   update();

@@ -330,7 +330,8 @@ insert into public.bot_settings (key, value, label, help, min_value, max_value) 
  ('disabled_strategies', '[]', 'Stratégies désactivées', 'cassure_retest, rejet_sweep, tendance_pullback, news_momentum', null, null),
  ('news_enabled', 'true', 'Utiliser les news', '', null, null),
  ('use_optimized_params', 'true', 'Utiliser les réglages appris sur l''historique', '', null, null),
- ('quote_currencies', '["USD"]', 'Paires analysées', 'Devise de cotation des paires que le bot peut proposer (USD par défaut).', null, null)
+ ('quote_currencies', '["USD"]', 'Paires analysées', 'Devise de cotation des paires que le bot peut proposer (USD par défaut).', null, null),
+ ('swing_risk_pct', '1', 'Swing : risque par position (%)', 'Perte au stop de chaque position swing. 0,5 % = jusqu''à 4 positions dans les 2 % de risque du club (au lieu de 2).', 0.25, 1)
 on conflict (key) do nothing;
 -- Stop « respirable » : l'ancien réglage 0,6 annulait la règle du bot (1,2). Corrigé une seule fois.
 do $$ begin

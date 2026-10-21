@@ -95,3 +95,19 @@ def test_signal_en_direct_sur_la_derniere_bougie():
     sig = R.last_signal(_df(closes), "canal_20_10")
     assert sig and sig.direction == "LONG" and sig.stop < sig.close and sig.trail < sig.close
     assert R.last_signal(_df(_range_then_trend(n_trend=5, step=0.05)), "canal_20_10") is None   # cassure déjà ancienne
+
+
+def test_demi_risque_permet_4_positions_dans_les_2_pourcent():
+    from kraken_assistant.swing.backtest import SwingTrade
+    d = lambda s: pd.Timestamp(s, tz="UTC")
+    tr = [SwingTrade(k, "x", "LONG", d(f"2024-01-0{i + 1}"), d("2024-02-01"), 1.0, "stop", "", "crypto", risk_path={})
+          for i, k in enumerate("abcde")]
+    assert len(portfolio(tr, 2.0, 1.0)) == 2 and len(portfolio(tr, 2.0, 0.5)) == 4
+
+
+def test_scenarios_et_preuve_par_variante_dans_le_rapport():
+    data = {f"k{i}": ("crypto", _df(np.r_[_range_then_trend(seed=i), _range_then_trend(seed=i + 50)[::-1]]), None)
+            for i in range(6)}
+    c = report(data, SwingParams(min_trades_select=3, min_oos_trades=1, folds=3))["par_classe"]["crypto"]
+    assert set(c["variantes_detail"]) == {R.combo_name(v, *R.parse_combo(c["variante_retenue"])[1:]) for v in R.VARIANTS}
+    assert any(k.endswith("|0.5%") for k in c["scenarios_club"])

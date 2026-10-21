@@ -37,6 +37,9 @@ def swing_proof(sb) -> dict[str, dict]:
         rep = r.get("report") or {}
         if rep.get("type") == "swing" and not rep.get("etude") and rep.get("par_classe"):
             return {cls: {"variante": c.get("variante_retenue"), "prouve": bool(c.get("prouve")),
+                          # 21/10 : toutes les variantes prouvées SEULES (ex. canal 20 et 55 jours) ; sinon la retenue
+                          "variantes": [v for v in (c.get("variantes_prouvees") or []) if v] or
+                                       ([c["variante_retenue"]] if c.get("variante_retenue") else []),
                           "stats": c.get("stats_variante"), "oos": (c.get("walk_forward") or {}).get("oos"),
                           "backtest_id": r.get("id")}
                     for cls, c in rep["par_classe"].items()}
@@ -132,12 +135,13 @@ def _name(p: dict) -> str:
     return "BTC" if b == "XBT" else b
 
 
-def msg_new(p: dict) -> str:
+def msg_new(p: dict, risk_pct: float = 1.0) -> str:
     sign = 1 if p["direction"] == "LONG" else -1
     pct = abs(float(p["entry_high" if sign > 0 else "entry_low"]) - float(p["stop_initial"])) / float(p["signal_close"]) * 100
+    dist, rk = f"{pct:.1f}".replace(".", ","), f"{risk_pct:g}".replace(".", ",")
     return (f"🟢 <b>SWING {p['direction']} {_name(p)}</b> — trade de plusieurs jours\n"
             f"Entrée : vers {_px(p['signal_close'])} (zone {_px(p['entry_low'])} – {_px(p['entry_high'])})\n"
-            f"Stop : {_px(p['stop_initial'])} (≈ {pct:.1f} % : taille petite, perte au stop = 1 %)\n"
+            f"Stop : {_px(p['stop_initial'])} (≈ {dist} % : taille petite, perte au stop = {rk} %)\n"
             "Pas d'objectif fixe : le stop suit la tendance. Je t'envoie le nouveau stop chaque matin.\n"
             "Calcule ta taille sur le site avant d'entrer.\n<i>Probabilité, pas garantie. Paper d'abord.</i>")
 
@@ -227,25 +231,34 @@ def daily_job(sb, app, now: datetime | None = None, client=None) -> dict:
     paused = _paused(sb)
     if proven and not paused:
         from ..backtest.runner import pick_universe
-        universe = [i for i in pick_universe(app, 40, {c: 12 for c in proven if c != "crypto"}) if i.asset_class in proven]
+        cfg = getattr(app, "settings", None)
+        risk = float(getattr(cfg, "swing_risk_pct", 1.0) or 1.0)
+        n_univ = int(getattr(cfg, "swing_universe", 40) or 40)
+        universe = [i for i in pick_universe(app, n_univ, {c: 12 for c in proven if c != "crypto"}) if i.asset_class in proven]
         open_now = [p for p in positions if p.get("status") == "ouvert"]
         busy = {p["instrument_key"] for p in open_now}
         for inst in universe:
             if inst.key in busy:
                 continue
-            variant = proven[inst.asset_class]["variante"]
-            v, _, sides = R.parse_combo(variant)
             try:
                 df = _daily(app, inst)
             except DataUnavailable:
                 continue
             if not len(df) or df.index[-1].date() != yesterday:
                 continue
-            sig = R.last_signal(df, v, sides)
+            # Canal le plus long d'abord (55 puis 20 jours) : une seule position par actif.
+            sig, variant = None, None
+            for name in sorted(proven[inst.asset_class]["variantes"], key=lambda n: -R.VARIANTS[R.parse_combo(n)[0]]["entry"]):
+                v, _, sides = R.parse_combo(name)
+                sig = R.last_signal(df, v, sides)
+                if sig is not None:
+                    variant = name
+                    break
             if sig is None:
                 continue
             row = signal_row(inst, sig, variant)
-            if open_risk_units(open_now) + 1.0 > 2.0 + 1e-9:
+            row["history"] = [{"date": row["signal_date"], "stop": row["stop_initial"], "close": row["signal_close"], "risque_pct": risk}]
+            if (open_risk_units(open_now) + 1.0) * risk > 2.0 + 1e-9:
                 row.update(status="refuse", refus="2 % de risque déjà engagé sur les positions ouvertes (règle du club)")
                 out["refusees"] += 1
             try:
@@ -257,7 +270,7 @@ def daily_job(sb, app, now: datetime | None = None, client=None) -> dict:
                 rec = (ins or [row])[0]
                 open_now.append(rec)
                 busy.add(inst.key)
-                texts.append(msg_new(rec))
+                texts.append(msg_new(rec, risk))
                 out["nouvelles"] += 1
     elif paused:
         out["pause"] = paused

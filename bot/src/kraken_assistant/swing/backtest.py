@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from ..backtest.engine import BTTrade, metrics
+from ..backtest.engine import BTTrade, equity_curve, metrics
 from . import rules as R
 
 
@@ -159,8 +159,8 @@ def by_year(trades: list[SwingTrade]) -> dict:
     return {y: _stats(ts) for y, ts in sorted(out.items())}
 
 
-def portfolio(trades: list[SwingTrade], cap_pct: float) -> list[SwingTrade]:
-    """Règles du club : 1 % par trade, risque ouvert cumulé ≤ cap_pct (risque d'un trade = distance encore exposée
+def portfolio(trades: list[SwingTrade], cap_pct: float, risk_pct: float = 1.0) -> list[SwingTrade]:
+    """Règles du club : `risk_pct` % par trade, risque ouvert cumulé ≤ cap_pct (risque d'un trade = distance encore exposée
     jusqu'à son stop actuel ; un stop au point mort libère la place), une position par instrument."""
     taken: list[SwingTrade] = []
     for t in sorted(trades, key=lambda x: (x.entry_ts, x.key)):
@@ -169,10 +169,34 @@ def portfolio(trades: list[SwingTrade], cap_pct: float) -> list[SwingTrade]:
         if any(x.key == t.key for x in open_):
             continue
         prev = day - pd.Timedelta(days=1)
-        used = sum(x.risk_path.get(prev, 1.0) for x in open_)
-        if used + 1.0 <= cap_pct + 1e-9:
+        used = sum(risk_pct * x.risk_path.get(prev, 1.0) for x in open_)
+        if used + risk_pct <= cap_pct + 1e-9:
             taken.append(t)
     return taken
+
+
+def scenario(trades: list[SwingTrade], cap_pct: float, risk_pct: float, period: str) -> dict:
+    """Ce qu'aurait vécu un membre : portefeuille aux règles du club, capital 100, `risk_pct` % par trade."""
+    port = portfolio(trades, cap_pct, risk_pct)
+    if not port:
+        return {"trades": 0}
+    m = metrics(port, equity=equity_curve(port, 100.0, risk_pct), period=period)
+    months = max(1.0, (max(t.exit_ts for t in port) - min(t.entry_ts for t in port)).days / 30.44)
+    keep = ("trades", "expectancy_r", "win_rate_pct", "profit_factor", "max_drawdown_pct", "pire_serie_pertes",
+            "rendement_net_pct", "capital_final")
+    out = {k: m.get(k) for k in keep}
+    out["trades_par_mois"] = round(len(port) / months, 1)
+    out["par_annee"] = {y: {"n": st["n"], "expectancy_r": st.get("expectancy_r")} for y, st in by_year(port).items()}
+    return out
+
+
+def variant_proof(ts: list[SwingTrade], oos_start: pd.Timestamp, p: SwingParams) -> dict:
+    """Preuve d'UNE variante fixée à l'avance : tout l'historique ET la période hors échantillon (après la 1re tranche)."""
+    allst, oos = _stats(ts), _stats([t for t in ts if t.entry_ts >= oos_start])
+    ok = bool(allst.get("n", 0) >= p.min_trades_select and allst.get("expectancy_r", 0) > 0
+              and (allst.get("profit_factor") or 0) >= p.min_pf
+              and oos.get("n", 0) >= p.min_oos_trades and oos.get("expectancy_r", 0) > 0)
+    return {"tout": allst, "hors_echantillon": oos, "prouve": ok}
 
 
 def walk_forward(trades_by_combo: dict[str, list[SwingTrade]], p: SwingParams) -> dict:
@@ -219,9 +243,31 @@ def report(data: dict[str, tuple[str, pd.DataFrame, pd.Series | None]], p: Swing
         prouve = bool(final[0] and fs.get("expectancy_r", 0) > 0 and (fs.get("profit_factor") or 0) >= p.min_pf
                       and o.get("n", 0) >= p.min_oos_trades and o.get("expectancy_r", 0) > 0)
         port = portfolio(oos, p.open_risk_cap) if oos else []
+        allc = [t for ts in by.values() for t in ts]
+        oos_start = (list(pd.date_range(min(t.entry_ts for t in allc), max(t.exit_ts for t in allc), periods=p.folds + 1))[1]
+                     if allc else None)
+        # 21/10 : plus de signaux sans tricher — les deux longueurs de canal (20 et 55 jours) jouées ensemble, chacune
+        # devant être prouvée seule ; et 0,5 % de risque par position (4 positions dans les 2 % au lieu de 2).
+        detail, prouvees = {}, []
+        if final[0] and oos_start is not None:
+            _, mgmt, sides = R.parse_combo(final[0])
+            for v in R.VARIANTS:
+                name = R.combo_name(v, mgmt, sides)
+                detail[name] = variant_proof(by.get(name, []), oos_start, p)
+                if detail[name]["prouve"]:
+                    prouvees.append(name)
+        scen = {}
+        if oos_start is not None and final[0]:
+            per = f"{oos_start:%Y-%m-%d} → {max(t.exit_ts for t in allc):%Y-%m-%d}"
+            sets = {"55_jours": [final[0]] if "55" in final[0] else [], "20_et_55_jours": list(detail)}
+            for label, names in sets.items():
+                pool = [t for n in names for t in by.get(n, []) if t.entry_ts >= oos_start]
+                for risk in (1.0, 0.5):
+                    scen[f"{label}|{risk:g}%"] = scenario(pool, p.open_risk_cap, risk, per) if pool else {"trades": 0}
         rep["par_classe"][cls] = {
             "walk_forward": wf, "variante_retenue": final[0], "stats_variante": fs, "par_annee": by_year(final[1]),
-            "prouve": prouve,
+            "prouve": prouve, "variantes_prouvees": prouvees if prouve else [], "variantes_detail": detail,
+            "scenarios_club": scen,
             "portefeuille_club": metrics(port, period=wf.get("periode_hors_echantillon", "")) if port else {"trades": 0},
         }
     return rep
