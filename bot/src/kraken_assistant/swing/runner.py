@@ -76,8 +76,17 @@ def summary_text(rep: dict) -> str:
             o = d.get("hors_echantillon", {})
             out.append(f"    variante {name} : hors échantillon {o.get('n', 0)} trades {o.get('expectancy_r', 0) or 0:+.3f}R "
                        f"→ {'prouvée' if d.get('prouve') else 'non prouvée'}")
+        for k in ("par_palier_tout", "par_palier_hors_echantillon"):
+            pp = c.get(k) or {}
+            if pp:
+                out.append(f"    {k} : " + " · ".join(f"{t}/4 : {st.get('n', 0)} trades {st.get('expectancy_r', 0) or 0:+.2f}R"
+                                                    for t, st in pp.items()))
         for k, sc in c.get("scenarios_club", {}).items():
             if sc.get("trades"):
+                mm = sc.get("mensuel") or {}
+                if mm:
+                    out.append(f"    mois positifs {k} : {mm['mois_positifs']}/{mm['mois']} ({mm['pct_mois_positifs']} %) · "
+                               f"pire mois {mm['pire_mois_pct']:+.1f} % · meilleur {mm['meilleur_mois_pct']:+.1f} %")
                 out.append(f"    scénario club {k:<22} {sc['trades']:>4} trades ({sc['trades_par_mois']}/mois) "
                            f"{sc['expectancy_r']:+.3f}R · capital 100 → {sc['capital_final']:.0f} · pire baisse {sc['max_drawdown_pct']:.1f} % "
                            f"· pire série {sc['pire_serie_pertes']}")

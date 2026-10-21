@@ -36,7 +36,8 @@ class SwingParams:
 class SwingTrade(BTTrade):
     days: int = 0
     funding_r: float = 0.0
-    risk_path: dict = field(default_factory=dict)   # date (jour) → part du risque initial encore exposée (0..1)
+    risk_path: dict = field(default_factory=dict)
+    tier: int = 1                                   # mise conseillée 1/4…4/4 (rules.tier, critères fixés le 21/10)   # date (jour) → part du risque initial encore exposée (0..1)
 
 
 def daily_funding(rates: list[dict], index: pd.DatetimeIndex) -> pd.Series:
@@ -60,8 +61,9 @@ def daily_funding(rates: list[dict], index: pd.DatetimeIndex) -> pd.Series:
 
 
 def simulate(df: pd.DataFrame, funding: pd.Series | None, key: str, asset_class: str, variant: str, mgmt: str,
-             sides: str, p: SwingParams) -> list[SwingTrade]:
+             sides: str, p: SwingParams, btc_ok: pd.Series | None = None) -> list[SwingTrade]:
     v = R.VARIANTS[variant]
+    tiers = R.tier_series(df, btc_ok)
     ch = R.channels(df, v["entry"], v["exit"])
     o, h, l, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     hi_e, lo_e = ch["hi_entry"].to_numpy(float), ch["lo_entry"].to_numpy(float)
@@ -82,7 +84,8 @@ def simulate(df: pd.DataFrame, funding: pd.Series | None, key: str, asset_class:
             risk = abs(entry - stop0)
             if risk > 0 and np.isfinite(risk):
                 pos = {"dir": pending, "sign": sign, "entry": entry, "stop": stop0, "risk": risk, "rem": 1.0,
-                       "r": -ft * entry / risk, "fund_r": 0.0, "i0": i, "partial": False, "path": {}}
+                       "r": -ft * entry / risk, "fund_r": 0.0, "i0": i, "partial": False, "path": {},
+                       "tier": int(tiers[i - 1]) if pending == "LONG" else 1}
             pending = None
         if pos is not None:
             sign, entry, risk = pos["sign"], pos["entry"], pos["risk"]
@@ -125,18 +128,20 @@ def simulate(df: pd.DataFrame, funding: pd.Series | None, key: str, asset_class:
 
 def _close(pos, i, idx, key, asset_class, name, why) -> SwingTrade:
     return SwingTrade(key, name, pos["dir"], idx[pos["i0"]], idx[i], float(pos["r"]), why, "", asset_class, 0.0,
-                      days=int(i - pos["i0"]) + 1, funding_r=float(pos["fund_r"]), risk_path=pos["path"])
+                      days=int(i - pos["i0"]) + 1, funding_r=float(pos["fund_r"]), risk_path=pos["path"], tier=pos.get("tier", 1))
 
 
 def all_trades(data: dict[str, tuple[str, pd.DataFrame, pd.Series | None]], p: SwingParams) -> dict[str, list[SwingTrade]]:
     """{combo: trades sur tous les instruments}. data = {key: (classe, bougies 1j, funding/jour)}."""
     out: dict[str, list[SwingTrade]] = {}
+    btc = next((df for key, (_, df, _) in data.items() if key.endswith("PF_XBTUSD")), None)
+    btc_ok = R.above_sma(btc) if btc is not None else None
     for variant in R.VARIANTS:
         for mgmt in R.MGMT:
             for sides in R.SIDES:
                 name = R.combo_name(variant, mgmt, sides)
                 out[name] = [t for key, (cls, df, fund) in data.items()
-                             for t in simulate(df, fund, key, cls, variant, mgmt, sides, p)]
+                             for t in simulate(df, fund, key, cls, variant, mgmt, sides, p, btc_ok)]
     return out
 
 
@@ -159,9 +164,11 @@ def by_year(trades: list[SwingTrade]) -> dict:
     return {y: _stats(ts) for y, ts in sorted(out.items())}
 
 
-def portfolio(trades: list[SwingTrade], cap_pct: float, risk_pct: float = 1.0) -> list[SwingTrade]:
-    """Règles du club : `risk_pct` % par trade, risque ouvert cumulé ≤ cap_pct (risque d'un trade = distance encore exposée
-    jusqu'à son stop actuel ; un stop au point mort libère la place), une position par instrument."""
+def portfolio(trades: list[SwingTrade], cap_pct: float, risk_pct=1.0) -> list[SwingTrade]:
+    """Règles du club : risque par trade (`risk_pct` : nombre, ou fonction trade → %), risque ouvert cumulé ≤ cap_pct
+    (risque d'un trade = distance encore exposée jusqu'à son stop actuel ; un stop au point mort libère la place),
+    une position par instrument."""
+    rk = risk_pct if callable(risk_pct) else (lambda t: risk_pct)
     taken: list[SwingTrade] = []
     for t in sorted(trades, key=lambda x: (x.entry_ts, x.key)):
         day = t.entry_ts.normalize()
@@ -169,25 +176,53 @@ def portfolio(trades: list[SwingTrade], cap_pct: float, risk_pct: float = 1.0) -
         if any(x.key == t.key for x in open_):
             continue
         prev = day - pd.Timedelta(days=1)
-        used = sum(risk_pct * x.risk_path.get(prev, 1.0) for x in open_)
-        if used + risk_pct <= cap_pct + 1e-9:
+        used = sum(rk(x) * x.risk_path.get(prev, 1.0) for x in open_)
+        if used + rk(t) <= cap_pct + 1e-9:
             taken.append(t)
     return taken
 
 
-def scenario(trades: list[SwingTrade], cap_pct: float, risk_pct: float, period: str) -> dict:
-    """Ce qu'aurait vécu un membre : portefeuille aux règles du club, capital 100, `risk_pct` % par trade."""
-    port = portfolio(trades, cap_pct, risk_pct)
+def monthly(port: list[SwingTrade], rk) -> dict:
+    """Résultat de chaque mois (en % du capital, trades comptés au mois de leur sortie, capital composé)."""
+    if not port:
+        return {}
+    by: dict[str, float] = {}
+    for t in sorted(port, key=lambda x: x.exit_ts):
+        m = f"{t.exit_ts:%Y-%m}"
+        by[m] = (1 + by.get(m, 0.0) / 100) * (1 + t.r * rk(t) / 100) * 100 - 100
+    first, last = min(t.entry_ts for t in port), max(t.exit_ts for t in port)
+    months = [f"{d:%Y-%m}" for d in pd.period_range(first, last, freq="M").to_timestamp()]
+    vals = [round(by.get(m, 0.0), 2) for m in months]
+    pos = sum(1 for v in vals if v > 0)
+    neg = sum(1 for v in vals if v < 0)
+    return {"mois": len(vals), "mois_positifs": pos, "mois_negatifs": neg, "mois_sans_trade_clos": len(vals) - pos - neg,
+            "pct_mois_positifs": round(pos / len(vals) * 100, 1), "pire_mois_pct": min(vals), "meilleur_mois_pct": max(vals),
+            "detail": dict(zip(months, vals))}
+
+
+def scenario(trades: list[SwingTrade], cap_pct: float, risk_pct, period: str) -> dict:
+    """Ce qu'aurait vécu un membre : portefeuille aux règles du club, capital 100, risque par trade `risk_pct`
+    (nombre, ou fonction trade → % pour la mise par paliers 1/4…4/4)."""
+    rk = risk_pct if callable(risk_pct) else (lambda t: risk_pct)
+    port = portfolio(trades, cap_pct, rk)
     if not port:
         return {"trades": 0}
-    m = metrics(port, equity=equity_curve(port, 100.0, risk_pct), period=period)
+    eq = [100.0]
+    for t in sorted(port, key=lambda x: x.exit_ts):
+        eq.append(eq[-1] * (1 + t.r * rk(t) / 100))
+    m = metrics(port, equity=eq, period=period)
     months = max(1.0, (max(t.exit_ts for t in port) - min(t.entry_ts for t in port)).days / 30.44)
     keep = ("trades", "expectancy_r", "win_rate_pct", "profit_factor", "max_drawdown_pct", "pire_serie_pertes",
             "rendement_net_pct", "capital_final")
     out = {k: m.get(k) for k in keep}
     out["trades_par_mois"] = round(len(port) / months, 1)
     out["par_annee"] = {y: {"n": st["n"], "expectancy_r": st.get("expectancy_r")} for y, st in by_year(port).items()}
+    out["mensuel"] = monthly(port, rk)
     return out
+
+
+def by_tier(trades: list[SwingTrade]) -> dict:
+    return {str(k): _stats([t for t in trades if t.tier == k]) for k in (1, 2, 3, 4)}
 
 
 def variant_proof(ts: list[SwingTrade], oos_start: pd.Timestamp, p: SwingParams) -> dict:
@@ -264,10 +299,19 @@ def report(data: dict[str, tuple[str, pd.DataFrame, pd.Series | None]], p: Swing
                 pool = [t for n in names for t in by.get(n, []) if t.entry_ts >= oos_start]
                 for risk in (1.0, 0.5):
                     scen[f"{label}|{risk:g}%"] = scenario(pool, p.open_risk_cap, risk, per) if pool else {"trades": 0}
+            # 21/10 : mise par paliers (1/4 = 0,5 % … 4/4 = 2 %) selon des critères fixés à l'avance (rules.tier_series)
+            pool = [t for n in detail for t in by.get(n, []) if t.entry_ts >= oos_start]
+            if pool:
+                for cap in (2.0, 4.0):
+                    scen[f"20_et_55_jours|paliers|cap{cap:g}%"] = scenario(pool, cap, lambda t: R.TIER_RISK[t.tier], per)
+                    scen[f"20_et_55_jours|0.5%|cap{cap:g}%"] = scenario(pool, cap, 0.5, per)
+                    scen[f"20_et_55_jours|1%|cap{cap:g}%"] = scenario(pool, cap, 1.0, per)
         rep["par_classe"][cls] = {
             "walk_forward": wf, "variante_retenue": final[0], "stats_variante": fs, "par_annee": by_year(final[1]),
             "prouve": prouve, "variantes_prouvees": prouvees if prouve else [], "variantes_detail": detail,
             "scenarios_club": scen,
+            "par_palier_hors_echantillon": by_tier([t for n in detail for t in by.get(n, []) if oos_start is not None and t.entry_ts >= oos_start]),
+            "par_palier_tout": by_tier([t for n in detail for t in by.get(n, [])]),
             "portefeuille_club": metrics(port, period=wf.get("periode_hors_echantillon", "")) if port else {"trades": 0},
         }
     return rep

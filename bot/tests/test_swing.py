@@ -111,3 +111,21 @@ def test_scenarios_et_preuve_par_variante_dans_le_rapport():
     c = report(data, SwingParams(min_trades_select=3, min_oos_trades=1, folds=3))["par_classe"]["crypto"]
     assert set(c["variantes_detail"]) == {R.combo_name(v, *R.parse_combo(c["variante_retenue"])[1:]) for v in R.VARIANTS}
     assert any(k.endswith("|0.5%") for k in c["scenarios_club"])
+
+
+def test_paliers_de_mise_criteres_connus_a_la_cloture():
+    df = _df(np.r_[np.full(230, 100.0), np.linspace(100, 130, 30), 140.0])
+    t = R.tier_series(df, R.above_sma(df))
+    assert t[-1] == 4                                   # cassure 55 j + au-dessus de la MM200 + « BTC » au-dessus
+    assert R.tier_series(df)[-1] == 3                   # sans contexte BTC : critère compté faux
+    assert set(np.unique(t)) <= {1, 2, 3, 4} and R.TIER_RISK[4] == 2.0
+
+
+def test_resultat_mensuel():
+    from kraken_assistant.swing.backtest import SwingTrade, monthly
+    d = lambda s: pd.Timestamp(s, tz="UTC")
+    tr = [SwingTrade("a", "x", "LONG", d("2024-01-02"), d("2024-01-20"), 2.0, "stop", "", "crypto"),
+          SwingTrade("b", "x", "LONG", d("2024-02-02"), d("2024-03-20"), -1.0, "stop", "", "crypto")]
+    m = monthly(tr, lambda t: 1.0)
+    assert m["detail"] == {"2024-01": 2.0, "2024-02": 0.0, "2024-03": -1.0}
+    assert m["mois_positifs"] == 1 and m["mois_negatifs"] == 1 and m["mois_sans_trade_clos"] == 1

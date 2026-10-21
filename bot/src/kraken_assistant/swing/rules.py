@@ -92,3 +92,32 @@ def next_stop(direction: str, current_stop: float, df_upto: pd.DataFrame, exit_d
     if direction == "LONG":
         return max(current_stop, float(df_upto["low"].iloc[-exit_days:].min()))
     return min(current_stop, float(df_upto["high"].iloc[-exit_days:].max()))
+
+
+# --------------------------------------------------------------------------------- mise par paliers (21/10)
+# Critères FIXÉS avant le test (classiques du suivi de tendance), tous connus à la clôture du signal :
+#   +1 si la clôture casse aussi le plus haut de 55 jours (cassure longue, pas seulement 20 jours)
+#   +1 si l'actif est au-dessus de sa moyenne 200 jours (tendance de fond haussière)
+#   +1 si le BTC est au-dessus de sa moyenne 200 jours (marché crypto porteur)
+# Palier = 1 + nombre de critères → mise 1/4 … 4/4. Le backtest dit si ça aide vraiment (par_palier_*).
+SMA_LONG = 200
+TIER_RISK = {1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0}      # % du capital perdu au stop selon le palier
+
+
+def above_sma(df: pd.DataFrame | None, n: int = SMA_LONG) -> pd.Series | None:
+    if df is None or df.empty:
+        return None
+    sma = df["close"].rolling(n).mean()
+    return (df["close"] > sma) & sma.notna()
+
+
+def tier_series(df: pd.DataFrame, btc_ok: pd.Series | None = None) -> np.ndarray:
+    hi55 = df["high"].shift(1).rolling(55).max()
+    c1 = (df["close"] > hi55).fillna(False).to_numpy(bool)
+    c2 = above_sma(df).to_numpy(bool)
+    if btc_ok is not None:
+        c3 = btc_ok.reindex(df.index.normalize(), method="ffill").fillna(False).to_numpy(bool) \
+            if not btc_ok.index.equals(df.index) else btc_ok.fillna(False).to_numpy(bool)
+    else:
+        c3 = np.zeros(len(df), bool)
+    return 1 + c1.astype(int) + c2.astype(int) + c3.astype(int)
