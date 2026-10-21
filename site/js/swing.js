@@ -54,13 +54,20 @@ export function etatSwing(p, price, now = Date.now()) {
     texte: `Stop actuel ${pq(p.stop_current, p.quote)} : au stop, tu sortirais vers ${rr(stop_r)}. Le bot le remonte chaque matin (message Telegram).` };
 }
 
+/** Confiance 1/4…4/4 calculée par le bot au signal (cassure 55 j, tendance de fond, BTC porteur). */
+export const palierDe = (p) => +(p.history || [])[0]?.palier || null;
+export function confiance(p) {
+  const k = palierDe(p);
+  return k ? `<span class="pastille ${k >= 3 ? "long" : k === 2 ? "ambre" : ""}" title="Hors échantillon : 1/4 ≈ −0,2 R, 2/4 ≈ +0,4 R, 3/4 et 4/4 ≈ +1,3 R par trade">Confiance ${k}/4</span>` : "";
+}
+
 export function swingCard(p, price, now = Date.now()) {
   const e = etatSwing(p, price, now);
   return `<article class="bloc swing-carte" data-swing="${esc(p.id)}">
     <div class="ligne entre"><div><b class="${isLong(p) ? "gain" : "perte"}">${isLong(p) ? "LONG ↑" : "SHORT ↓"}</b> <b>${esc(nomSwing(p))}</b>
       <span class="small muted">· swing</span></div>
       <span class="pastille ${e.ton}">${e.icone} ${esc(e.titre)}</span></div>
-    <p class="small" style="margin:8px 0">${e.texte}</p>
+    <p class="small" style="margin:8px 0">${confiance(p)} ${e.texte}</p>
     <div class="small muted">Entrée ${pq(entreeDe(p), p.quote)} · stop ${pq(p.stop_current, p.quote)}${p.days != null ? ` · ${p.days} j` : ""}
       ${p.demo ? " · <b>DÉMO</b>" : ""} · <a href="#/swing/${esc(p.id)}">détails →</a></div>
   </article>`;

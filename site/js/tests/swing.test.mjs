@@ -43,3 +43,9 @@ test("bloc backtest : rien sans rapport, sinon la preuve par classe et par anné
   assert.match(h, /LONG seulement/);
   assert.match(h, /2026 : -0,04 R/);
 });
+
+test("confiance 1/4…4/4 affichée seulement si le bot l'a calculée", async () => {
+  const { confiance } = await import("../swing.js");
+  assert.equal(confiance(base), "");
+  assert.match(confiance({ ...base, history: [{ palier: 3 }] }), /Confiance 3\/4/);
+});

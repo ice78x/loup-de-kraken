@@ -51,6 +51,10 @@ sorties courtes, verdict d'abord (🟢 / 🟡 / 🛑), pas de jargon non expliqu
   21/10 : chaque variante est prouvée SEULE (`variant_proof`, `variantes_prouvees`) et le direct joue toutes les variantes prouvées
   (canal 55 puis 20 jours, une position par actif) ; risque par position `bot_settings.swing_risk_pct` (0,5 % depuis le 21/10 : 4 positions
   dans les 2 %), scénarios club dans le rapport (`scenarios_club`). Étude 40 cryptos 20+55 j à 0,5 % : ≈ 7 trades/mois, pire baisse 7,7 %.
+  Confiance 1/4…4/4 (`rules.tier_series` : cassure 55 j + actif > MM200 + BTC > MM200, fixés avant test) : hors échantillon
+  1/4 −0,18R, 2/4 +0,44R, 3/4 +1,26R, 4/4 +1,30R → affichée (message, carte) ; la mise par paliers n'a PAS amélioré le portefeuille
+  (mise fixe gardée). Choix du 21/10 (membre accepte plus de risque) : 1 % par position, risque ouvert swing max 4 %
+  (`bot_settings.swing_risk_cap`) → ≈ 7 trades/mois, pire baisse ≈ 15 %, ≈ 1 mois sur 2 positif, pire mois ≈ −8 %.
   section en tête de l'accueil. Résultat du 19/10 (crypto, 2022→2026) : canal 55/20 trail LONG seul ≈ +0,8R/trade, hors échantillon
   +0,85R, mais 2026 ≈ −0,04R (dépend du marché haussier) et biais de survie (univers = liquides aujourd'hui) → paper d'abord.
 - **Backtest walk-forward** : `backtest/walkforward.py` (AVANT ancien moteur / APRÈS v2, edges appris seulement sur le passé, frais + glissement),

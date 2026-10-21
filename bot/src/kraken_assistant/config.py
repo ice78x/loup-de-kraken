@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     # --- Swing (19/10) ---
     swing_risk_pct: float = 1.0          # perte au stop par position swing (bot_settings) ; le cap reste 2 % de risque ouvert
     swing_universe: int = 40             # cryptos les plus liquides analysées chaque nuit
+    swing_risk_cap: float = 2.0          # risque ouvert cumulé max des positions swing (bot_settings ; 4 % choisi le 21/10)
     recent_stops: list[str] = Field(default_factory=list)          # "instrument_key|SENS" (rempli par le cloud)
     degraded_strategies: list[str] = Field(default_factory=list)  # série de pertes récente (rempli par le cloud)
     min_net_rr_tp2_v2: float = 1.5            # R:R net de frais minimal au TP2 pour un 🟢 v2

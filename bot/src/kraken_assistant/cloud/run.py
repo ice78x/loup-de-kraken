@@ -43,7 +43,7 @@ EDITABLE = {
     "disabled_strategies": (list, None, None), "news_enabled": (bool, None, None),
     "use_optimized_params": (bool, None, None),
     "quote_currencies": (list, None, None),
-    "swing_risk_pct": (float, 0.25, 1.0),
+    "swing_risk_pct": (float, 0.25, 2.0), "swing_risk_cap": (float, 1.0, 6.0),
 }
 
 

@@ -110,4 +110,9 @@ def test_deux_canaux_prouves_et_demi_risque(monkeypatch):
     rows = pg.tables["swing_positions"]
     assert all(r["variant"] == "canal_20_10|trail|long" for r in rows)
     assert out["nouvelles"] == 4 and out["refusees"] == 2                      # 0,5 % chacune → 4 dans les 2 %
-    assert rows[0]["history"][0]["risque_pct"] == 0.5
+    assert rows[0]["history"][0]["risque_pct"] == 0.5 and rows[0]["history"][0]["palier"] in (1, 2, 3, 4)
+
+
+def test_message_avec_confiance():
+    m = L.msg_new(_pos(), 1.0, 3)
+    assert "Confiance : <b>3/4</b>" in m and "perte au stop = 1 %" in m

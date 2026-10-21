@@ -331,8 +331,10 @@ insert into public.bot_settings (key, value, label, help, min_value, max_value) 
  ('news_enabled', 'true', 'Utiliser les news', '', null, null),
  ('use_optimized_params', 'true', 'Utiliser les réglages appris sur l''historique', '', null, null),
  ('quote_currencies', '["USD"]', 'Paires analysées', 'Devise de cotation des paires que le bot peut proposer (USD par défaut).', null, null),
- ('swing_risk_pct', '1', 'Swing : risque par position (%)', 'Perte au stop de chaque position swing. 0,5 % = jusqu''à 4 positions dans les 2 % de risque du club (au lieu de 2).', 0.25, 1)
+ ('swing_risk_pct', '1', 'Swing : risque par position (%)', 'Perte au stop de chaque position swing.', 0.25, 2),
+ ('swing_risk_cap', '2', 'Swing : risque ouvert maximum (%)', 'Total des pertes possibles au stop sur toutes les positions swing ouvertes. 4 % avec 1 % par position = 4 positions.', 1, 6)
 on conflict (key) do nothing;
+update public.bot_settings set max_value = 2 where key = 'swing_risk_pct' and max_value < 2;
 -- Stop « respirable » : l'ancien réglage 0,6 annulait la règle du bot (1,2). Corrigé une seule fois.
 do $$ begin
   if not exists (select 1 from public._migrations where name = 'stop_respirable_1_2') then

@@ -135,14 +135,18 @@ def _name(p: dict) -> str:
     return "BTC" if b == "XBT" else b
 
 
-def msg_new(p: dict, risk_pct: float = 1.0) -> str:
+CONFIANCE = {1: "1/4 (faible)", 2: "2/4", 3: "3/4", 4: "4/4 (forte)"}
+
+
+def msg_new(p: dict, risk_pct: float = 1.0, palier: int | None = None) -> str:
     sign = 1 if p["direction"] == "LONG" else -1
     pct = abs(float(p["entry_high" if sign > 0 else "entry_low"]) - float(p["stop_initial"])) / float(p["signal_close"]) * 100
     dist, rk = f"{pct:.1f}".replace(".", ","), f"{risk_pct:g}".replace(".", ",")
     return (f"🟢 <b>SWING {p['direction']} {_name(p)}</b> — trade de plusieurs jours\n"
             f"Entrée : vers {_px(p['signal_close'])} (zone {_px(p['entry_low'])} – {_px(p['entry_high'])})\n"
             f"Stop : {_px(p['stop_initial'])} (≈ {dist} % : taille petite, perte au stop = {rk} %)\n"
-            "Pas d'objectif fixe : le stop suit la tendance. Je t'envoie le nouveau stop chaque matin.\n"
+            + (f"Confiance : <b>{CONFIANCE.get(palier, '?')}</b> (cassure 55 j, tendance de fond, BTC porteur)\n" if palier else "")
+            + "Pas d'objectif fixe : le stop suit la tendance. Je t'envoie le nouveau stop chaque matin.\n"
             "Calcule ta taille sur le site avant d'entrer.\n<i>Probabilité, pas garantie. Paper d'abord.</i>")
 
 
@@ -157,7 +161,7 @@ def msg_close(p: dict) -> str:
 
 # ------------------------------------------------------------------------------------------------ orchestration
 def _daily(app, inst) -> pd.DataFrame:
-    df = futures_rows_to_df(app.futures.candles(inst.symbol, 1440, 200))
+    df = futures_rows_to_df(app.futures.candles(inst.symbol, 1440, 320))   # 200 j pour la moyenne longue (palier)
     return drop_unclosed(df, 1440)
 
 
@@ -234,6 +238,8 @@ def daily_job(sb, app, now: datetime | None = None, client=None) -> dict:
         cfg = getattr(app, "settings", None)
         risk = float(getattr(cfg, "swing_risk_pct", 1.0) or 1.0)
         n_univ = int(getattr(cfg, "swing_universe", 40) or 40)
+        cap = float(getattr(cfg, "swing_risk_cap", 2.0) or 2.0)
+        btc_ok = R.above_sma(ref_df) if ref is not None and ref.key.endswith("PF_XBTUSD") else None
         universe = [i for i in pick_universe(app, n_univ, {c: 12 for c in proven if c != "crypto"}) if i.asset_class in proven]
         open_now = [p for p in positions if p.get("status") == "ouvert"]
         busy = {p["instrument_key"] for p in open_now}
@@ -257,9 +263,11 @@ def daily_job(sb, app, now: datetime | None = None, client=None) -> dict:
             if sig is None:
                 continue
             row = signal_row(inst, sig, variant)
-            row["history"] = [{"date": row["signal_date"], "stop": row["stop_initial"], "close": row["signal_close"], "risque_pct": risk}]
-            if (open_risk_units(open_now) + 1.0) * risk > 2.0 + 1e-9:
-                row.update(status="refuse", refus="2 % de risque déjà engagé sur les positions ouvertes (règle du club)")
+            palier = int(R.tier_series(df, btc_ok)[-1]) if sig.direction == "LONG" else 1
+            row["history"] = [{"date": row["signal_date"], "stop": row["stop_initial"], "close": row["signal_close"],
+                               "risque_pct": risk, "palier": palier}]
+            if (open_risk_units(open_now) + 1.0) * risk > cap + 1e-9:
+                row.update(status="refuse", refus=f"{cap:g} % de risque déjà engagé sur les positions ouvertes (règle du club)".replace(".", ","))
                 out["refusees"] += 1
             try:
                 ins = sb.insert(TABLE, row, returning=True)
@@ -270,7 +278,7 @@ def daily_job(sb, app, now: datetime | None = None, client=None) -> dict:
                 rec = (ins or [row])[0]
                 open_now.append(rec)
                 busy.add(inst.key)
-                texts.append(msg_new(rec, risk))
+                texts.append(msg_new(rec, risk, palier))
                 out["nouvelles"] += 1
     elif paused:
         out["pause"] = paused

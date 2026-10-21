@@ -2,7 +2,7 @@
 import { backend } from "../data.js";
 import { eurPerQuote, krakenLink, prices } from "../market.js";
 import { levierConseille } from "../setup.js";
-import { entreeOuverte, etatSwing, isLong, nomSwing, refPos, swingBacktestBlock, swingCard } from "../swing.js";
+import { confiance, entreeOuverte, etatSwing, isLong, nomSwing, refPos, swingBacktestBlock, swingCard } from "../swing.js";
 import { dt, esc, pq } from "../ui.js";
 
 const jj = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${m[3]}/${m[2]}` : esc(d); };
@@ -48,6 +48,8 @@ async function detail(main, ctx, id) {
       <span class="pastille ${e.ton}">${e.icone} ${esc(e.titre)}</span>
     </div>
     <p class="setup-idee grand">${e.texte}</p>
+    ${confiance(p) ? `<p>${confiance(p)} <span class="small muted">Plus la confiance est haute, meilleurs étaient ces trades dans le passé
+      (sur des données jamais vues : 1/4 ≈ −0,2 R, 2/4 ≈ +0,4 R, 3/4 et 4/4 ≈ +1,3 R par trade). Ce n'est pas une certitude.</span></p>` : ""}
     ${p.demo ? '<p class="alerte small">DÉMO : position fictive.</p>' : ""}
     <section class="section grille">
       <div class="bloc pile"><h2>Le plan</h2>
