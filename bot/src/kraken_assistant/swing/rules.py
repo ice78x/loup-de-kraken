@@ -101,7 +101,8 @@ def next_stop(direction: str, current_stop: float, df_upto: pd.DataFrame, exit_d
 #   +1 si le BTC est au-dessus de sa moyenne 200 jours (marché crypto porteur)
 # Palier = 1 + nombre de critères → mise 1/4 … 4/4. Le backtest dit si ça aide vraiment (par_palier_*).
 SMA_LONG = 200
-TIER_RISK = {1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0}      # % du capital perdu au stop selon le palier
+TIER_RISK = {1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0}      # % du capital perdu au stop selon le palier (testé le 21/10 : moins bien)
+TIER_RISK_V2 = {1: 0.0, 2: 0.5, 3: 1.0, 4: 1.0}   # 21/10 : 1/4 sauté (perdant hors échantillon), 2/4 demi-mise, 3/4 et 4/4 pleine
 
 
 def above_sma(df: pd.DataFrame | None, n: int = SMA_LONG) -> pd.Series | None:

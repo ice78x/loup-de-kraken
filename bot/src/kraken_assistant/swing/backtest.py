@@ -306,6 +306,11 @@ def report(data: dict[str, tuple[str, pd.DataFrame, pd.Series | None]], p: Swing
                     scen[f"20_et_55_jours|paliers|cap{cap:g}%"] = scenario(pool, cap, lambda t: R.TIER_RISK[t.tier], per)
                     scen[f"20_et_55_jours|0.5%|cap{cap:g}%"] = scenario(pool, cap, 0.5, per)
                     scen[f"20_et_55_jours|1%|cap{cap:g}%"] = scenario(pool, cap, 1.0, per)
+                # Palier 1/4 perdant hors échantillon (21/10) : on teste « on le saute », mise 1/2 pour 2/4, pleine pour 3/4 et 4/4.
+                sans1 = [t for t in pool if t.tier >= 2]
+                for cap in (2.0, 3.0, 4.0):
+                    scen[f"sans_1sur4|0.5-1%|cap{cap:g}%"] = scenario(sans1, cap, lambda t: R.TIER_RISK_V2[t.tier], per)
+                    scen[f"sans_1sur4|0.5%|cap{cap:g}%"] = scenario(sans1, cap, 0.5, per)
         rep["par_classe"][cls] = {
             "walk_forward": wf, "variante_retenue": final[0], "stats_variante": fs, "par_annee": by_year(final[1]),
             "prouve": prouve, "variantes_prouvees": prouvees if prouve else [], "variantes_detail": detail,
